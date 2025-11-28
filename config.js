@@ -34,7 +34,9 @@ export const CONFIG = {
         LEVEL_DURATION: 10,
         SPAWN_RATE_INCREASE: 0.01,
         SPEED_INCREASE: 1,
-        BOSS_LEVEL_INTERVAL: 4
+        BOSS_LEVEL_INTERVAL: 4,
+        MAX_SPAWN_RATE: 2,
+        MAX_SPEED: 200
     },
     
     // Boss settings

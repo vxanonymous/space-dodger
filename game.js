@@ -590,13 +590,14 @@ class SpaceDodger {
     }
     
     updateLevel() {
-        const { LEVEL_DURATION, SPAWN_RATE_INCREASE, SPEED_INCREASE } = CONFIG.GAME;
+        const { LEVEL_DURATION, SPAWN_RATE_INCREASE, SPEED_INCREASE, MAX_SPAWN_RATE, MAX_SPEED } = CONFIG.GAME;
         
         const newLevel = Math.floor(this.gameTime / LEVEL_DURATION) + 1;
         if (newLevel > this.level) {
             this.level = newLevel;
-            this.obstacleSpawnRate += SPAWN_RATE_INCREASE;
-            this.obstacleSpeed += SPEED_INCREASE;
+            // Cap spawn rate and speed to prevent kill screen
+            this.obstacleSpawnRate = Math.min(this.obstacleSpawnRate + SPAWN_RATE_INCREASE, MAX_SPAWN_RATE);
+            this.obstacleSpeed = Math.min(this.obstacleSpeed + SPEED_INCREASE, MAX_SPEED);
             this.triggerLevelFlash();
         }
     }
