@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="author" content="Space Dodger Game">
+    <title>Space Dodger</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Game Container -->
+    <div id="gameContainer">
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas" width="800" height="700"></canvas>
+        
+        <!-- HUD -->
+        <div id="hud">
+            <div>Score: <span id="score">0</span></div>
+            <div>Lives: <span id="lives">3</span></div>
+            <div>Level: <span id="level">1</span></div>
+            <div>High Score: <span id="highScore">0</span></div>
+            <div id="powerUpStatus" style="margin-top: 10px; border-top: 1px solid #333; padding-top: 5px;"></div>
+        </div>
+    </div>
+
+    <!-- Main Menu -->
+    <div id="mainMenu" class="overlay">
+        <div class="menu-content">
+            <h1>SPACE DODGER</h1>
+            <p>Dodge the obstacle invasion!</p>
+            
+            <!-- Start Game Button -->
+            <button class="start-btn" id="startGameBtn">START GAME</button>
+            
+            <!-- High Score Display (Always Visible) -->
+            <div style="margin: 20px 0; padding: 15px; background: #222; border-radius: 5px; border: 2px solid #00ff00;">
+                <h2 style="margin: 0 0 10px 0; color: #00ff00; font-size: 1.5em;">🏆 HIGH SCORE</h2>
+                <p style="margin: 0; font-size: 2em; font-weight: bold; color: #00ff00;" id="prominentHighScore">0</p>
+            </div>
+            
+            <!-- Menu Navigation Buttons -->
+            <div class="menu-nav">
+                <button class="nav-btn active" data-section="instructions">Instructions</button>
+                <button class="nav-btn" data-section="stats">Stats</button>
+                <button class="nav-btn" data-section="achievements">Achievements</button>
+                <button class="nav-btn" data-section="about">About Me</button>
+            </div>
+            
+            <!-- Instructions Section -->
+            <div id="instructions-section" class="content-section active">
+                <!-- How to Play -->
+                <div class="instruction-section">
+                    <h3>How to Play</h3>
+                    <p>Use your mouse to move the spaceship horizontally and avoid all incoming obstacles. Survive as long as possible to achieve the highest score. Every 4 levels, you'll face a boss with unique attack patterns that require quick reflexes and strategy!</p>
+                </div>
+                
+                <!-- Controls -->
+                <div class="instruction-section">
+                    <h3>Controls</h3>
+                    <ul>
+                        <li>Mouse: Move ship horizontally (follows mouse cursor)</li>
+                        <li>Avoid obstacles to survive</li>
+                        <li>Score points by surviving longer</li>
+                        <li>Don't get hit by obstacles!</li>
+                    </ul>
+                </div>
+                
+                <!-- Boss Attacks -->
+                <div class="instruction-section">
+                    <h3>Boss Attacks</h3>
+                    <p>Every 4 levels = BOSS FIGHT + obstacles!</p>
+                            <ul>
+                                <li><strong>Spikes:</strong> 3 spikes equally distributed</li>
+                                <li><strong>Double Spikes:</strong> 5 random vertical spikes with warning</li>
+                        <li><strong>Wall Restriction:</strong> Walls collapse from both sides</li>
+                        <li><strong>Moving Safe Zone:</strong> Safe area moves left to right</li>
+                        <li><strong>Giant Obstacle:</strong> Large falling obstacle</li>
+                        <li><strong>Double Obstacles:</strong> Increased obstacle spawn rate</li>
+                        <li><strong>Gravity Attack:</strong> All obstacles fall at 500% speed</li>
+                            </ul>
+                </div>
+            </div>
+            
+            <!-- Stats Section -->
+            <div id="stats-section" class="content-section">
+                <div id="metrics">
+                    <h3>Statistics:</h3>
+                    <p>Games Played: <span id="gamesPlayed">0</span></p>
+                    <p>Average Score: <span id="avgScore">0</span></p>
+                    <p>Average Level: <span id="avgLevel">0</span></p>
+                    <p>Total Play Time: <span id="totalTime">0</span> minutes</p>
+                </div>
+                <div id="leaderboard" style="margin-top: 20px;">
+                    <p style="color: #888;">Loading leaderboard...</p>
+                </div>
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #333;">
+                    <button class="start-btn return-btn" id="resetCacheBtn" style="font-size: 0.9em; padding: 10px 20px;">Reset Local Cache</button>
+                    <p style="color: #888; font-size: 0.8em; margin-top: 10px;">This will clear all local data (high score, stats, achievements). The leaderboard will remain.</p>
+                </div>
+            </div>
+            
+            <!-- Achievements Section -->
+            <div id="achievements-section" class="content-section">
+                <h3>Achievements</h3>
+                <div id="achievementsList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
+                </div>
+            </div>
+            
+            <!-- About Me Section -->
+            <div id="about-section" class="content-section">
+                <div class="about-section">
+                    <h3>About Space Dodger</h3>
+                    <p>Space Dodger is an arcade-style dodging game, with progressive difficulty, boss fights every 4 levels, and various attack patterns.</p>
+                    
+                    <h4>Creator</h4>
+                    <p>Developed by Vinh Nguyen</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOver" class="overlay hidden">
+        <div class="menu-content">
+            <h1 class="game-over">GAME OVER</h1>
+            <div class="final-score">Final Score: <span id="finalScore">0</span></div>
+            <div>Level Reached: <span id="finalLevel">1</span></div>
+            <div>High Score: <span id="gameOverHighScore">0</span></div>
+            <button class="start-btn" id="restartGameBtn">PLAY AGAIN</button>
+            <button class="start-btn return-btn" id="returnToMenuBtn">RETURN TO MENU</button>
+        </div>
+    </div>
+
+    <script type="module" src="menu.js"></script>
+</body>
+</html>

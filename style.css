@@ -1,0 +1,403 @@
+/* Space Dodger CSS*/
+
+body {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+#gameContainer {
+    position: relative;
+    display: inline-block;
+}
+
+#gameCanvas {
+    display: block;
+    border: 2px solid #333;
+    background: #000;
+}
+
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.menu-content {
+    text-align: center;
+    background: #111;
+    padding: 40px;
+    border-radius: 10px;
+    border: 2px solid #333;
+    max-width: 900px;
+    max-height: 80vh;
+    overflow-y: auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+h1 {
+    font-size: 3em;
+    margin: 0 0 20px 0;
+    color: #00ff00;
+    text-shadow: 0 0 10px #00ff00;
+}
+
+.game-over {
+    color: #ff0000 !important;
+    text-shadow: 0 0 10px #ff0000 !important;
+}
+
+.start-btn {
+    background: #00ff00;
+    color: #000;
+    border: none;
+    padding: 15px 30px;
+    font-size: 1.2em;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 5px;
+    margin: 10px;
+    transition: background 0.3s;
+}
+
+.start-btn:hover {
+    background: #00cc00;
+}
+
+.start-btn:active {
+    background: #009900;
+}
+
+.return-btn {
+    background: #666;
+    margin-top: 10px;
+}
+
+.return-btn:hover {
+    background: #888;
+}
+
+.menu-nav {
+    margin: 20px 0;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.nav-btn {
+    background: #333;
+    color: #fff;
+    border: 2px solid #555;
+    padding: 10px 20px;
+    font-size: 1em;
+    font-family: 'Courier New', monospace;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: all 0.3s;
+    min-width: 120px;
+}
+
+.nav-btn:hover {
+    background: #555;
+    border-color: #777;
+}
+
+.nav-btn.active {
+    background: #00ff00;
+    color: #000;
+    border-color: #00ff00;
+    font-weight: bold;
+}
+
+.nav-btn.active:hover {
+    background: #00cc00;
+    border-color: #00cc00;
+}
+
+.content-section {
+    display: none;
+    margin-top: 20px;
+    text-align: left;
+    background: #222;
+    padding: 20px;
+    border-radius: 5px;
+    border: 1px solid #333;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.content-section.active {
+    display: block;
+}
+
+.instructions {
+    margin-top: 30px;
+    text-align: left;
+    background: #222;
+    padding: 20px;
+    border-radius: 5px;
+    border: 1px solid #333;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.instruction-section {
+    margin-bottom: 25px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #333;
+}
+
+.instruction-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.content-section h3 {
+    color: #00ff00;
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.2em;
+}
+
+.content-section h4 {
+    color: #00ff00;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    font-size: 1.1em;
+}
+
+.content-section p {
+    margin: 10px 0;
+    line-height: 1.4;
+}
+
+.content-section ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.content-section li {
+    margin: 8px 0;
+    line-height: 1.4;
+}
+
+.content-section strong {
+    color: #00ff00;
+}
+
+.instructions h3 {
+    color: #00ff00;
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.2em;
+}
+
+.instructions p {
+    margin: 10px 0;
+    line-height: 1.4;
+}
+
+.instructions ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.instructions li {
+    margin: 8px 0;
+    line-height: 1.4;
+}
+
+.instructions strong {
+    color: #00ff00;
+}
+
+.stats-section {
+    margin-top: 20px;
+    text-align: center;
+    background: #222;
+    padding: 15px;
+    border-radius: 5px;
+    border: 1px solid #333;
+}
+
+.stats-section p {
+    margin: 10px 0;
+    font-size: 1.1em;
+}
+
+#metrics {
+    margin-top: 15px;
+}
+
+#metrics h3 {
+    color: #00ff00;
+    margin-bottom: 10px;
+    font-size: 1.1em;
+}
+
+#metrics p {
+    margin: 5px 0;
+    font-size: 0.9em;
+}
+
+.about-section {
+    text-align: left;
+}
+
+.about-section h3 {
+    color: #00ff00;
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.3em;
+    text-align: center;
+}
+
+.about-section h4 {
+    color: #00ff00;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    font-size: 1.1em;
+}
+
+.about-section p {
+    margin: 10px 0;
+    line-height: 1.5;
+}
+
+.about-section ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.about-section li {
+    margin: 8px 0;
+    line-height: 1.4;
+}
+
+#hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px;
+    border-radius: 5px;
+    border: 1px solid #333;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    z-index: 100;
+}
+
+#hud div {
+    margin: 5px 0;
+}
+
+.final-score {
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #00ff00;
+    margin: 20px 0;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Responsive design for mobile */
+@media (max-width: 600px) {
+    .menu-content {
+        padding: 20px;
+        margin: 20px;
+        max-width: 90vw;
+    }
+    
+    h1 {
+        font-size: 2em;
+    }
+    
+    .start-btn {
+        padding: 12px 24px;
+        font-size: 1em;
+    }
+    
+    .menu-nav {
+        gap: 5px;
+        margin: 15px 0;
+    }
+    
+    .nav-btn {
+        padding: 8px 15px;
+        font-size: 0.9em;
+        min-width: 100px;
+    }
+    
+    .content-section {
+        max-height: 300px;
+        padding: 15px;
+    }
+    
+    .instructions {
+        max-height: 300px;
+        padding: 15px;
+    }
+    
+    .instruction-section {
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+    }
+    
+    .content-section h3,
+    .instructions h3 {
+        font-size: 1.1em;
+    }
+    
+    .content-section li,
+    .instructions li {
+        font-size: 0.9em;
+    }
+    
+    #hud {
+        font-size: 12px;
+        padding: 8px;
+    }
+}
+
+/* Achievement notification animations */
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+}
