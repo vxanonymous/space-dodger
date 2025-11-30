@@ -30,13 +30,16 @@ http://localhost:8000
 ```
 
 ### Backend
+The frontend is currently configured to use the backend at `https://space-dodger-api.onrender.com`.
+
+For localhost:
 ```bash
 cd backend
 npm install
 cp env.example .env  # add MONGODB_URI
 npm start
 ```
-Update `config.js` `API.BASE_URL` to your backend URL.
+Then update `config.js` `API.BASE_URL` to `http://localhost:3000` for local testing.
 
 ## Tech Stack
 
