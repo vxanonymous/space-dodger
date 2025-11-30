@@ -110,9 +110,7 @@ export const CONFIG = {
     
     // API settings
     API: {
-        BASE_URL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-            ? 'http://localhost:3000'
-            : 'https://space-dodger-api.onrender.com',
+        BASE_URL: 'https://space-dodger-api.onrender.com',
         LEADERBOARD_LIMIT: 100
     },
     
