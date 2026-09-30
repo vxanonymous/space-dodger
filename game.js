@@ -84,6 +84,7 @@ class SpaceDodger {
         this.shieldSavedLife = false;
         this.totalScoreEarned = this.metrics.totalScoreEarned || 0;
         this.lifeLostDuringBossLevel = false; // Track if life was lost during current boss level
+        this.livesLostInFirstLevel = 0;
 
         this.setupEventListeners();
         this.createStars();
@@ -205,6 +206,7 @@ class SpaceDodger {
         this.bossAttackTypesDefeated = new Set();
         this.shieldSavedLife = false;
         this.lifeLostDuringBossLevel = false;
+        this.livesLostInFirstLevel = 0;
 
         this.updateHUD();
         this.metrics.currentGameStartTime = Date.now();
@@ -574,6 +576,9 @@ class SpaceDodger {
         if (this.boss) {
             this.lifeLostDuringBossLevel = true;
         }
+        if (this.level === 1) {
+            this.livesLostInFirstLevel++;
+        }
 
         this.lives--;
         if (this.lives <= 0) {
@@ -825,6 +830,7 @@ class SpaceDodger {
         this.bossAttackTypesDefeated = new Set();
         this.shieldSavedLife = false;
         this.lifeLostDuringBossLevel = false;
+        this.livesLostInFirstLevel = 0;
 
         this.updateAllHighScoreDisplays();
         this.updateMenuMetrics();

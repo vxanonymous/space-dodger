@@ -9,6 +9,8 @@ export const ACHIEVEMENTS = [
     { id: 'score_1500', name: 'Reach 1500 points', icon: '⭐' },
     { id: 'score_2000', name: 'Reach 2000 points', icon: '⭐' },
     { id: 'score_5000', name: 'Reach 5000 points', icon: '⭐' },
+    { id: 'beat_high_score', name: 'Beat Your High Score', icon: '📈' },
+    { id: 'comeback_1000', name: 'Reach 1000 Points After Losing 2 Lives in Level 1', icon: '🔥' },
     { id: 'perfect_run', name: 'Perfect Run (Score divisible by 100)', icon: '✨' },
     { id: 'boss_spikes', name: 'Defeat Spikes Boss', icon: '👾' },
     { id: 'boss_double_spikes', name: 'Defeat Double Spikes Boss', icon: '👾' },
@@ -85,6 +87,17 @@ export class AchievementManager {
             if (this.game.score >= milestone) {
                 this.unlockAchievement(`score_${milestone}`);
             }
+        }
+
+        // Beat a previous, non-zero high score (checked live, so it pops the
+        // moment the record falls; game.highScore updates only at game over)
+        if (this.game.highScore > 0 && this.game.score > this.game.highScore) {
+            this.unlockAchievement('beat_high_score');
+        }
+
+        // Comeback: lost 2 lives during level 1, still reached 1000 points
+        if (this.game.livesLostInFirstLevel >= 2 && this.game.score >= 1000) {
+            this.unlockAchievement('comeback_1000');
         }
 
         // Boss type achievements (one for each attack type)
