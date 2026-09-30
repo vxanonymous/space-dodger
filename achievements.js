@@ -2,30 +2,31 @@
 import { StorageManager } from './storage.js';
 import { BOSS_ATTACK_PATTERNS } from './boss-attacks.js';
 
-// Single source of truth for achievement ids, display names, and icons
+// Single source of truth for achievement ids, display names, icons, and
+// descriptions (shown in the details popup)
 export const ACHIEVEMENTS = [
-    { id: 'score_500', name: 'Reach 500 points', icon: '⭐' },
-    { id: 'score_1000', name: 'Reach 1000 points', icon: '⭐' },
-    { id: 'score_1500', name: 'Reach 1500 points', icon: '⭐' },
-    { id: 'score_2000', name: 'Reach 2000 points', icon: '⭐' },
-    { id: 'score_5000', name: 'Reach 5000 points', icon: '⭐' },
-    { id: 'beat_high_score', name: 'Beat Your High Score', icon: '📈' },
-    { id: 'comeback_1000', name: 'Reach 1000 Points After Losing 2 Lives in Level 1', icon: '🔥' },
-    { id: 'perfect_run', name: 'Perfect Run (Score divisible by 100)', icon: '✨' },
-    { id: 'boss_spikes', name: 'Defeat Spikes Boss', icon: '👾' },
-    { id: 'boss_double_spikes', name: 'Defeat Double Spikes Boss', icon: '👾' },
-    { id: 'boss_wall', name: 'Defeat Wall Restriction Boss', icon: '👾' },
-    { id: 'boss_moving_safe', name: 'Defeat Moving Safe Zone Boss', icon: '👾' },
-    { id: 'boss_giant_obstacle', name: 'Defeat Giant Obstacle Boss', icon: '👾' },
-    { id: 'boss_double_obstacles', name: 'Defeat Double Obstacles Boss', icon: '👾' },
-    { id: 'boss_gravity', name: 'Defeat Gravity Attack Boss', icon: '👾' },
-    { id: 'all_bosses', name: 'Complete All Boss Types', icon: '👑' },
-    { id: 'shield_saved', name: 'Survived by Shield at 1 Life', icon: '🛡️' },
-    { id: 'powerups_3', name: 'Get 3 Power-ups in One Game', icon: '💎' },
-    { id: 'games_100', name: 'Play 100 Games', icon: '🎮' },
-    { id: 'total_score_50000', name: 'Total 50,000 Points Earned', icon: '🏅' },
-    { id: 'leaderboard_ranked', name: 'Get a Result on Global Leaderboard', icon: '🌐' },
-    { id: 'leaderboard_top1', name: 'Get Top 1 on Global Leaderboard', icon: '👑' }
+    { id: 'score_500', name: 'Warming Up', icon: '⭐', description: 'Reach 500 points in a single game.' },
+    { id: 'score_1000', name: 'Cruising Altitude', icon: '⭐', description: 'Reach 1,000 points in a single game.' },
+    { id: 'score_1500', name: 'Asteroid Veteran', icon: '⭐', description: 'Reach 1,500 points in a single game.' },
+    { id: 'score_2000', name: 'Deep Space', icon: '⭐', description: 'Reach 2,000 points in a single game.' },
+    { id: 'score_5000', name: 'Legend of the Void', icon: '⭐', description: 'Reach 5,000 points in a single game.' },
+    { id: 'beat_high_score', name: 'Personal Best', icon: '📈', description: 'Beat your own previous high score. Your record must be above 0, so your first game doesn\'t count.' },
+    { id: 'comeback_1000', name: 'Phoenix', icon: '🔥', description: 'Lose two lives during level 1, then rise from the ashes and still reach 1,000 points.' },
+    { id: 'perfect_run', name: 'Round Number', icon: '✨', description: 'Finish a game with a score that is exactly divisible by 100.' },
+    { id: 'boss_spikes', name: 'Spike Dancer', icon: '👾', description: 'Survive a boss fight featuring the Spikes attack without losing a life.' },
+    { id: 'boss_double_spikes', name: 'Needle Threader', icon: '👾', description: 'Survive a boss fight featuring the Double Spikes attack without losing a life.' },
+    { id: 'boss_wall', name: 'Wall Runner', icon: '👾', description: 'Survive a boss fight featuring the collapsing Walls attack without losing a life.' },
+    { id: 'boss_moving_safe', name: 'Safe Passage', icon: '👾', description: 'Survive a boss fight featuring the Moving Safe Zone attack without losing a life.' },
+    { id: 'boss_giant_obstacle', name: 'Giant Slayer', icon: '👾', description: 'Survive a boss fight featuring the Giant Obstacle attack without losing a life.' },
+    { id: 'boss_double_obstacles', name: 'Storm Chaser', icon: '👾', description: 'Survive a boss fight featuring the Double Obstacles attack without losing a life.' },
+    { id: 'boss_gravity', name: 'Gravity Defier', icon: '👾', description: 'Survive a boss fight featuring the 500%-speed Gravity attack without losing a life.' },
+    { id: 'all_bosses', name: 'Full House', icon: '👑', description: 'Survive all seven boss attack types across your games.' },
+    { id: 'shield_saved', name: 'Clutch Save', icon: '🛡️', description: 'On your last life, have a shield absorb a hit that would have ended the game.' },
+    { id: 'powerups_3', name: 'Collector', icon: '💎', description: 'Grab three power-ups in a single game.' },
+    { id: 'games_100', name: 'Frequent Flyer', icon: '🎮', description: 'Play 100 games in total.' },
+    { id: 'total_score_50000', name: 'Marathon Runner', icon: '🏅', description: 'Earn 50,000 points in total across all your games.' },
+    { id: 'leaderboard_ranked', name: 'On the Board', icon: '🌐', description: 'Place a score in the global top 100 leaderboard.' },
+    { id: 'leaderboard_top1', name: 'World Champion', icon: '👑', description: 'Hold the #1 spot on the global leaderboard.' }
 ];
 
 const ACHIEVEMENT_NAMES = Object.fromEntries(ACHIEVEMENTS.map(a => [a.id, a.name]));
@@ -35,6 +36,50 @@ const SCORE_MILESTONES = [500, 1000, 1500, 2000, 5000];
 export class AchievementManager {
     constructor(game) {
         this.game = game;
+        this.setupDetailsModal();
+    }
+
+    setupDetailsModal() {
+        // One delegated listener on the grid container survives every rebuild
+        const list = document.getElementById('achievementsList');
+        if (list) {
+            list.addEventListener('click', (e) => {
+                const card = e.target.closest('[data-ach-id]');
+                if (card) this.showAchievementDetails(card.dataset.achId);
+            });
+        }
+
+        const modal = document.getElementById('achievementModal');
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.classList.add('hidden');
+            });
+            document.getElementById('achModalCloseBtn').addEventListener('click', () => {
+                modal.classList.add('hidden');
+            });
+        }
+    }
+
+    showAchievementDetails(id) {
+        const ach = ACHIEVEMENTS.find(a => a.id === id);
+        if (!ach) return;
+
+        document.getElementById('achModalIcon').textContent = ach.icon;
+        document.getElementById('achModalName').textContent = ach.name;
+        document.getElementById('achModalDesc').textContent = ach.description;
+
+        const status = document.getElementById('achModalStatus');
+        const unlocked = this.game.achievements[id];
+        if (unlocked) {
+            const when = unlocked.unlockedAt ? ` on ${new Date(unlocked.unlockedAt).toLocaleDateString()}` : '';
+            status.textContent = `✓ Unlocked${when}`;
+            status.style.color = '#00ff00';
+        } else {
+            status.textContent = '🔒 Locked';
+            status.style.color = '#888';
+        }
+
+        document.getElementById('achievementModal').classList.remove('hidden');
     }
 
     unlockAchievement(id) {
@@ -141,12 +186,13 @@ export class AchievementManager {
         achievementsList.innerHTML = ACHIEVEMENTS.map(ach => {
             const unlocked = this.game.achievements[ach.id];
             return `
-                <div style="
+                <div data-ach-id="${ach.id}" title="Click for details" style="
                     padding: 15px;
                     background: ${unlocked ? '#222' : '#111'};
                     border: 2px solid ${unlocked ? '#00ff00' : '#333'};
                     border-radius: 5px;
                     opacity: ${unlocked ? '1' : '0.6'};
+                    cursor: pointer;
                 ">
                     <div style="font-size: 2em; margin-bottom: 5px;">${ach.icon}</div>
                     <div style="color: ${unlocked ? '#00ff00' : '#888'}; font-weight: ${unlocked ? 'bold' : 'normal'};">

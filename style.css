@@ -325,6 +325,39 @@ h1 {
     padding: 10px 20px;
 }
 
+/* Above the main menu overlay, which is z-index 1000 */
+#achievementModal {
+    z-index: 1100;
+}
+
+.achievement-modal {
+    max-width: 420px;
+    text-align: center;
+}
+
+.achievement-modal h3 {
+    color: #00ff00;
+    font-size: 1.4em;
+    margin: 0 0 10px 0;
+}
+
+.achievement-modal p {
+    line-height: 1.5;
+}
+
+.ach-modal-icon {
+    font-size: 3em;
+    margin-bottom: 10px;
+}
+
+#achievementsList [data-ach-id] {
+    transition: transform 0.15s;
+}
+
+#achievementsList [data-ach-id]:hover {
+    transform: translateY(-2px);
+}
+
 .pause-btn {
     position: absolute;
     top: 10px;
