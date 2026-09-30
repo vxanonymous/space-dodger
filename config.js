@@ -43,8 +43,9 @@ export const CONFIG = {
         // A spawn rate of 1 already means one obstacle every frame, so this cap
         // must stay well below 1 to actually prevent the kill screen
         MAX_SPAWN_RATE: 0.3,
-        // Px per 1/60s frame (20 = 1200 px/s, crossing the canvas in ~0.6s)
-        MAX_SPEED: 20
+        // Px per 1/60s frame. Matches the original ramp (effectively uncapped in
+        // realistic runs); swept collision keeps hits registering at any speed
+        MAX_SPEED: 200
     },
 
     // Boss settings
