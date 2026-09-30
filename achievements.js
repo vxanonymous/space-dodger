@@ -5,11 +5,11 @@ import { BOSS_ATTACK_PATTERNS } from './boss-attacks.js';
 // Single source of truth for achievement ids, display names, icons, and
 // descriptions (shown in the details popup)
 export const ACHIEVEMENTS = [
-    { id: 'score_500', name: 'Warming Up', icon: '⭐', description: 'Reach 500 points in a single game.' },
-    { id: 'score_1000', name: 'Cruising Altitude', icon: '⭐', description: 'Reach 1,000 points in a single game.' },
-    { id: 'score_1500', name: 'Asteroid Veteran', icon: '⭐', description: 'Reach 1,500 points in a single game.' },
-    { id: 'score_2000', name: 'Deep Space', icon: '⭐', description: 'Reach 2,000 points in a single game.' },
-    { id: 'score_5000', name: 'Legend of the Void', icon: '⭐', description: 'Reach 5,000 points in a single game.' },
+    { id: 'score_500', name: 'Warming Up', icon: '⭐', description: 'Reach 500 points in a single game.', progress: (g) => ({ current: g.highScore, target: 500 }) },
+    { id: 'score_1000', name: 'Cruising Altitude', icon: '⭐', description: 'Reach 1,000 points in a single game.', progress: (g) => ({ current: g.highScore, target: 1000 }) },
+    { id: 'score_1500', name: 'Asteroid Veteran', icon: '⭐', description: 'Reach 1,500 points in a single game.', progress: (g) => ({ current: g.highScore, target: 1500 }) },
+    { id: 'score_2000', name: 'Deep Space', icon: '⭐', description: 'Reach 2,000 points in a single game.', progress: (g) => ({ current: g.highScore, target: 2000 }) },
+    { id: 'score_5000', name: 'Legend of the Void', icon: '⭐', description: 'Reach 5,000 points in a single game.', progress: (g) => ({ current: g.highScore, target: 5000 }) },
     { id: 'beat_high_score', name: 'Personal Best', icon: '📈', description: 'Beat your own previous high score. Your record must be above 0, so your first game doesn\'t count.' },
     { id: 'comeback_1000', name: 'Phoenix', icon: '🔥', description: 'Lose two lives during level 1, then rise from the ashes and still reach 1,000 points.' },
     { id: 'perfect_run', name: 'Round Number', icon: '✨', description: 'Finish a game with a score that is exactly divisible by 100.' },
@@ -20,11 +20,11 @@ export const ACHIEVEMENTS = [
     { id: 'boss_giant_obstacle', name: 'Giant Slayer', icon: '👾', description: 'Survive a boss fight featuring the Giant Obstacle attack without losing a life.' },
     { id: 'boss_double_obstacles', name: 'Storm Chaser', icon: '👾', description: 'Survive a boss fight featuring the Double Obstacles attack without losing a life.' },
     { id: 'boss_gravity', name: 'Gravity Defier', icon: '👾', description: 'Survive a boss fight featuring the 500%-speed Gravity attack without losing a life.' },
-    { id: 'all_bosses', name: 'Full House', icon: '👑', description: 'Survive all seven boss attack types across your games.' },
+    { id: 'all_bosses', name: 'Full House', icon: '👑', description: 'Survive all seven boss attack types across your games.', progress: (g) => ({ current: BOSS_ATTACK_PATTERNS.filter(t => g.achievements[`boss_${t}`]).length, target: BOSS_ATTACK_PATTERNS.length }) },
     { id: 'shield_saved', name: 'Clutch Save', icon: '🛡️', description: 'On your last life, have a shield absorb a hit that would have ended the game.' },
     { id: 'powerups_3', name: 'Collector', icon: '💎', description: 'Grab three power-ups in a single game.' },
-    { id: 'games_100', name: 'Frequent Flyer', icon: '🎮', description: 'Play 100 games in total.' },
-    { id: 'total_score_50000', name: 'Marathon Runner', icon: '🏅', description: 'Earn 50,000 points in total across all your games.' },
+    { id: 'games_100', name: 'Frequent Flyer', icon: '🎮', description: 'Play 100 games in total.', progress: (g) => ({ current: g.metrics.totalGamesPlayed, target: 100 }) },
+    { id: 'total_score_50000', name: 'Marathon Runner', icon: '🏅', description: 'Earn 50,000 points in total across all your games.', progress: (g) => ({ current: g.totalScoreEarned, target: 50000 }) },
     { id: 'leaderboard_ranked', name: 'On the Board', icon: '🌐', description: 'Place a score in the global top 100 leaderboard.' },
     { id: 'leaderboard_top1', name: 'World Champion', icon: '👑', description: 'Hold the #1 spot on the global leaderboard.' }
 ];
@@ -70,6 +70,19 @@ export class AchievementManager {
 
         const status = document.getElementById('achModalStatus');
         const unlocked = this.game.achievements[id];
+
+        // Progress toward the goal, for locked achievements with a counter
+        const progressRow = document.getElementById('achModalProgress');
+        if (!unlocked && ach.progress) {
+            const { current, target } = ach.progress(this.game);
+            const capped = Math.max(0, Math.min(current, target));
+            document.getElementById('achModalProgressBar').style.width = `${(capped / target) * 100}%`;
+            document.getElementById('achModalProgressText').textContent =
+                `${capped.toLocaleString()} / ${target.toLocaleString()}`;
+            progressRow.classList.remove('hidden');
+        } else {
+            progressRow.classList.add('hidden');
+        }
         if (unlocked) {
             const when = unlocked.unlockedAt ? ` on ${new Date(unlocked.unlockedAt).toLocaleDateString()}` : '';
             status.textContent = `✓ Unlocked${when}`;
