@@ -116,6 +116,12 @@ class SpaceDodger {
             this.togglePause();
         });
 
+        document.getElementById('pauseBtn').addEventListener('click', (e) => {
+            e.currentTarget.blur(); // keep Enter/Space from re-triggering the button
+            this.togglePause();
+        });
+        document.getElementById('resumeBtn').addEventListener('click', () => this.togglePause());
+
         document.getElementById('nameSubmitBtn').addEventListener('click', () => this.saveNameAndSubmit());
         document.getElementById('playerNameInput').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.saveNameAndSubmit();
@@ -141,6 +147,7 @@ class SpaceDodger {
         this.pauseUsedThisGame = true;
         this.pauseStartMs = Date.now();
         document.getElementById('pauseOverlay').classList.remove('hidden');
+        document.getElementById('pauseBtn').classList.add('used');
     }
 
     showToast(message) {
@@ -219,6 +226,7 @@ class SpaceDodger {
         this.pauseUsedThisGame = false;
         this.pausedElapsedMs = 0;
         document.getElementById('pauseOverlay').classList.add('hidden');
+        document.getElementById('pauseBtn').classList.remove('used');
 
         // Reset achievement tracking for this game
         this.powerUpsCollectedThisGame = 0;

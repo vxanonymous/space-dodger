@@ -21,6 +21,8 @@
             <div>High Score: <span id="highScore">0</span></div>
             <div id="powerUpStatus" style="margin-top: 10px; border-top: 1px solid #333; padding-top: 5px;"></div>
         </div>
+
+        <button id="pauseBtn" class="pause-btn">⏸ Pause</button>
     </div>
 
     <!-- Main Menu -->
@@ -60,7 +62,7 @@
                     <ul>
                         <li>Mouse: Move ship horizontally (follows mouse cursor)</li>
                         <li>Touch: Drag on the game area to steer (mobile)</li>
-                        <li>P: Pause/resume — you can only pause once per game</li>
+                        <li>P or the ⏸ button: Pause/resume — you can only pause once per game</li>
                         <li>Avoid obstacles to survive</li>
                         <li>Score points by surviving longer</li>
                         <li>Don't get hit by obstacles!</li>
@@ -129,7 +131,8 @@
     <div id="pauseOverlay" class="overlay hidden">
         <div class="menu-content pause-content">
             <h1>PAUSED</h1>
-            <p>Press P to resume</p>
+            <button class="start-btn" id="resumeBtn">RESUME</button>
+            <p>Or press P</p>
             <p class="pause-note">You can only pause once per game</p>
         </div>
     </div>

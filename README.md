@@ -9,7 +9,7 @@ An arcade-style dodging game with progressive difficulty
 ### How to Play
 - **Mouse Move** – Your ship follows the mouse horizontally.
 - **Touch** – On mobile, drag on the game area to steer.
-- **P** – Pause/resume. To prevent abuse, you can only pause once per game.
+- **P or the ⏸ button** – Pause/resume. To prevent abuse, you can only pause once per game.
 - **Avoid Obstacles** – Dodge falling objects, boss attacks, and special hazards.
 - **Collect Power-Ups** – Shield (absorbs 1 hit in 10 seconds) and Slow-Down (reduces falling speed by 20% in 10 seconds).
 - **Boss Levels** – Every 4 levels a boss attack pattern starts.
