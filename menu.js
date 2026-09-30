@@ -29,10 +29,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Return to menu button
     document.getElementById('returnToMenuBtn').addEventListener('click', returnToMenu);
     
-    // Reset cache button
+    // Reset cache: two-step in-page confirmation, no blocking dialogs
     const resetCacheBtn = document.getElementById('resetCacheBtn');
-    if (resetCacheBtn) {
-        resetCacheBtn.addEventListener('click', resetCache);
+    const resetConfirmRow = document.getElementById('resetConfirmRow');
+    if (resetCacheBtn && resetConfirmRow) {
+        resetCacheBtn.addEventListener('click', () => {
+            resetConfirmRow.classList.toggle('hidden');
+        });
+        document.getElementById('resetConfirmBtn').addEventListener('click', () => {
+            resetCache();
+            resetConfirmRow.classList.add('hidden');
+        });
+        document.getElementById('resetCancelBtn').addEventListener('click', () => {
+            resetConfirmRow.classList.add('hidden');
+        });
     }
     
     // Navigation buttons

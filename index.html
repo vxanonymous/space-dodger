@@ -59,6 +59,7 @@
                     <h3>Controls</h3>
                     <ul>
                         <li>Mouse: Move ship horizontally (follows mouse cursor)</li>
+                        <li>Touch: Drag on the game area to steer (mobile)</li>
                         <li>P: Pause/resume — you can only pause once per game</li>
                         <li>Avoid obstacles to survive</li>
                         <li>Score points by surviving longer</li>
@@ -97,6 +98,10 @@
                 <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #333;">
                     <button class="start-btn return-btn" id="resetCacheBtn" style="font-size: 0.9em; padding: 10px 20px;">Reset Local Cache</button>
                     <p style="color: #888; font-size: 0.8em; margin-top: 10px;">This will clear all local data (high score, stats, achievements). The leaderboard will remain.</p>
+                    <div id="resetConfirmRow" class="hidden">
+                        <button class="start-btn" id="resetConfirmBtn" style="background: #cc0000; color: #fff; font-size: 0.9em; padding: 10px 20px;">YES, RESET EVERYTHING</button>
+                        <button class="start-btn return-btn" id="resetCancelBtn" style="font-size: 0.9em; padding: 10px 20px;">CANCEL</button>
+                    </div>
                 </div>
             </div>
             
@@ -137,6 +142,12 @@
             <div class="final-score">Final Score: <span id="finalScore">0</span></div>
             <div>Level Reached: <span id="finalLevel">1</span></div>
             <div>High Score: <span id="gameOverHighScore">0</span></div>
+            <div id="finalRank" class="final-rank"></div>
+            <div id="nameForm" class="name-form hidden">
+                <label for="playerNameInput">Name for the leaderboard:</label>
+                <input id="playerNameInput" maxlength="20" value="Player" autocomplete="off">
+                <button class="start-btn name-submit-btn" id="nameSubmitBtn">SUBMIT SCORE</button>
+            </div>
             <button class="start-btn" id="restartGameBtn">PLAY AGAIN</button>
             <button class="start-btn return-btn" id="returnToMenuBtn">RETURN TO MENU</button>
         </div>

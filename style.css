@@ -28,6 +28,7 @@ body {
     max-height: calc(100vh - 4px);
     width: auto;
     height: auto;
+    touch-action: none;
 }
 
 .overlay {
@@ -283,6 +284,45 @@ h1 {
     font-weight: bold;
     color: #00ff00;
     margin: 20px 0;
+}
+
+.final-rank {
+    color: #888;
+    margin: 10px 0;
+    min-height: 1.2em;
+}
+
+.name-form {
+    margin: 15px 0;
+}
+
+.name-form label {
+    display: block;
+    margin-bottom: 8px;
+    color: #ccc;
+}
+
+.name-form input {
+    background: #000;
+    color: #00ff00;
+    border: 2px solid #333;
+    border-radius: 5px;
+    padding: 10px 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 1em;
+    width: 220px;
+    max-width: 100%;
+    text-align: center;
+}
+
+.name-form input:focus {
+    outline: none;
+    border-color: #00ff00;
+}
+
+.name-submit-btn {
+    font-size: 0.9em;
+    padding: 10px 20px;
 }
 
 .pause-content {

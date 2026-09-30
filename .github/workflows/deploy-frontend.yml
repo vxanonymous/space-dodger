@@ -1,0 +1,35 @@
+name: Deploy frontend to Surge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'style.css'
+      - 'config.js'
+      - 'api.js'
+      - 'storage.js'
+      - 'achievements.js'
+      - 'boss-attacks.js'
+      - 'game.js'
+      - 'menu.js'
+      - 'rendering.js'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Only the frontend files are published — deploying the repo root would
+      # expose backend config; keep this list in sync with the site's files
+      - name: Stage frontend files
+        run: |
+          mkdir stage
+          cp index.html style.css config.js api.js storage.js achievements.js boss-attacks.js game.js menu.js rendering.js stage/
+      - name: Deploy to Surge
+        run: npx surge ./stage space-dodger.surge.sh --token "$SURGE_TOKEN"
+        env:
+          SURGE_TOKEN: ${{ secrets.SURGE_TOKEN }}

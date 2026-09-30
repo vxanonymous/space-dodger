@@ -65,6 +65,7 @@ class SpaceDodger {
         this.levelFlashTimer = 0;
 
         this.mouseX = START_X;
+        this.submissionSeq = 0;
 
         this.score = 0;
         this.lastDisplayedScore = -1;
@@ -93,15 +94,31 @@ class SpaceDodger {
     }
 
     setupEventListeners() {
-        this.canvas.addEventListener('mousemove', (e) => {
+        // The canvas can be CSS-scaled down on small screens; map back to canvas coordinates
+        const updatePointer = (clientX) => {
             const rect = this.canvas.getBoundingClientRect();
-            // The canvas can be CSS-scaled down on small screens; map back to canvas coordinates
-            this.mouseX = (e.clientX - rect.left) * (this.canvas.width / rect.width);
-        });
+            this.mouseX = (clientX - rect.left) * (this.canvas.width / rect.width);
+        };
+
+        this.canvas.addEventListener('mousemove', (e) => updatePointer(e.clientX));
+
+        const onTouch = (e) => {
+            if (e.touches.length > 0) {
+                updatePointer(e.touches[0].clientX);
+                e.preventDefault(); // steering must not scroll the page
+            }
+        };
+        this.canvas.addEventListener('touchstart', onTouch, { passive: false });
+        this.canvas.addEventListener('touchmove', onTouch, { passive: false });
 
         document.addEventListener('keydown', (e) => {
             if (e.repeat || (e.key !== 'p' && e.key !== 'P')) return;
             this.togglePause();
+        });
+
+        document.getElementById('nameSubmitBtn').addEventListener('click', () => this.saveNameAndSubmit());
+        document.getElementById('playerNameInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.saveNameAndSubmit();
         });
     }
 
@@ -116,7 +133,7 @@ class SpaceDodger {
         }
 
         if (this.pauseUsedThisGame) {
-            this.showPauseDeniedNotice();
+            this.showToast('⏸️ Pause already used this game');
             return;
         }
 
@@ -126,7 +143,7 @@ class SpaceDodger {
         document.getElementById('pauseOverlay').classList.remove('hidden');
     }
 
-    showPauseDeniedNotice() {
+    showToast(message) {
         const notice = document.createElement('div');
         notice.style.cssText = `
             position: fixed;
@@ -141,7 +158,7 @@ class SpaceDodger {
             animation: slideIn 0.3s ease-out;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         `;
-        notice.textContent = '⏸️ Pause already used this game';
+        notice.textContent = message;
         document.body.appendChild(notice);
         setTimeout(() => {
             notice.style.animation = 'slideOut 0.3s ease-out';
@@ -166,6 +183,8 @@ class SpaceDodger {
     startGame() {
         this.state = 'playing';
         this.resetGame();
+        // Fresh proof-of-play session per game; resolves long before game over
+        this.sessionTokenPromise = leaderboardAPI.startSession();
         document.getElementById('mainMenu').classList.add('hidden');
         document.getElementById('gameOver').classList.add('hidden');
 
@@ -756,7 +775,33 @@ class SpaceDodger {
         // Show the death screen immediately; the leaderboard submit runs in the
         // background and must never gate the UI on a network round-trip
         document.getElementById('gameOver').classList.remove('hidden');
-        this.submitScoreToLeaderboard();
+        this.prepareLeaderboardSubmission();
+    }
+
+    prepareLeaderboardSubmission() {
+        const rankLine = document.getElementById('finalRank');
+        const nameForm = document.getElementById('nameForm');
+        const playerName = StorageManager.loadPlayerName();
+
+        if (playerName) {
+            nameForm.classList.add('hidden');
+            rankLine.textContent = `Playing as ${playerName} — submitting score…`;
+            this.submitScoreToLeaderboard(playerName);
+        } else {
+            // First submission: ask for a name inline instead of a blocking prompt.
+            // Skipping (restarting without submitting) just skips this game's entry.
+            rankLine.textContent = '';
+            nameForm.classList.remove('hidden');
+        }
+    }
+
+    saveNameAndSubmit() {
+        const input = document.getElementById('playerNameInput');
+        const name = (input.value || '').trim().substring(0, 20) || 'Anonymous';
+        StorageManager.savePlayerName(name);
+        document.getElementById('nameForm').classList.add('hidden');
+        document.getElementById('finalRank').textContent = `Playing as ${name} — submitting score…`;
+        this.submitScoreToLeaderboard(name);
     }
 
     cleanup() {
@@ -858,24 +903,13 @@ class SpaceDodger {
         await this.loadLeaderboard();
     }
 
-    getPlayerName() {
-        let playerName = StorageManager.loadPlayerName();
-
-        if (!playerName) {
-            const input = prompt('Enter your name for the leaderboard (max 20 characters):', 'Player');
-            playerName = (input || '').trim().substring(0, 20) || 'Anonymous';
-            // Persist even the fallback, so a cancelled prompt never re-fires on
-            // every subsequent game over
-            StorageManager.savePlayerName(playerName);
-        }
-
-        return playerName;
-    }
-
-    async submitScoreToLeaderboard() {
+    async submitScoreToLeaderboard(playerName) {
+        // A quick restart can start a newer submission; only the latest may
+        // write to the rank line
+        const seq = ++this.submissionSeq;
         try {
-            const playerName = this.getPlayerName();
-            const result = await leaderboardAPI.submitScore(playerName, this.score, this.level);
+            const sessionToken = this.sessionTokenPromise ? await this.sessionTokenPromise : null;
+            const result = await leaderboardAPI.submitScore(playerName, this.score, this.level, sessionToken);
 
             if (result.success) {
                 // "Get a Result on Global Leaderboard" means placing on the visible board
@@ -885,6 +919,13 @@ class SpaceDodger {
                 if (result.rank === 1) {
                     this.achievementManager.unlockAchievement('leaderboard_top1');
                 }
+            }
+
+            const rankLine = document.getElementById('finalRank');
+            if (rankLine && seq === this.submissionSeq) {
+                rankLine.textContent = result.success && result.rank
+                    ? `Playing as ${playerName} — Global Rank: #${result.rank}`
+                    : `Playing as ${playerName} — leaderboard unavailable`;
             }
         } catch (error) {}
     }
@@ -902,9 +943,13 @@ class SpaceDodger {
                     const list = document.createElement('div');
                     list.style.cssText = 'text-align: left; max-width: 500px; margin: 10px auto; padding-left: 30px; max-height: 400px; overflow-y: auto;';
 
+                    const ownName = StorageManager.loadPlayerName();
                     result.leaderboard.forEach((entry, index) => {
                         const item = document.createElement('div');
-                        item.style.marginBottom = '5px';
+                        const isOwn = ownName && entry.playerName === ownName;
+                        item.style.cssText = isOwn
+                            ? 'margin-bottom: 5px; color: #00ff00; font-weight: bold; border-left: 3px solid #00ff00; padding-left: 6px;'
+                            : 'margin-bottom: 5px;';
 
                         // Server data is rendered as text nodes only — a stored player
                         // name must never reach innerHTML
@@ -918,6 +963,7 @@ class SpaceDodger {
                         item.append(
                             `${index + 1}. `,
                             name,
+                            isOwn ? ' (you)' : '',
                             ` - ${Number(entry.score).toLocaleString()} pts (Level ${entry.level}) `,
                             date
                         );
@@ -1005,12 +1051,9 @@ export function returnToMenu() {
 }
 
 export function resetCache() {
-    if (game && game.resetCache) {
-        if (confirm('Are you sure you want to reset all local cache? This will clear:\n- High Score\n- Statistics\n- Achievements\n- Player Name\n\nThe leaderboard will remain intact.')) {
-            game.resetCache();
-            alert('Cache reset successfully!');
-        }
-    }
+    if (!game) return;
+    game.resetCache();
+    game.showToast('🧹 Local data cleared');
 }
 
 // Initialize game as soon as the DOM is ready — menu.js binds its click handlers

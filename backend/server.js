@@ -3,6 +3,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const { version } = require('./package.json');
@@ -69,6 +70,42 @@ const MAX_LEADERBOARD_LIMIT = 100;
 const MAX_REASONABLE_SCORE = 10000000;
 const MAX_REASONABLE_LEVEL = 10000;
 
+// Proof-of-play: a token issued at game start bounds any later submission by
+// real elapsed time — the game scores exactly SCORE_PER_SECOND, so a claimed
+// score can't exceed what the session's wall-clock age allows.
+const SCORE_PER_SECOND = 10;
+const LEVEL_DURATION_SECONDS = 10;
+const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const SCORE_MARGIN = 50;
+// Derived from the DB URI when no explicit secret is set: stable across
+// restarts, never sent to clients
+const TOKEN_SECRET = process.env.SCORE_TOKEN_SECRET ||
+    crypto.createHash('sha256').update(`space-dodger-session:${MONGODB_URI}`).digest();
+
+const signSession = (payload) =>
+    crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex');
+
+function verifySession(token) {
+    if (typeof token !== 'string') return null;
+    const [payload, sig] = token.split('.');
+    if (!payload || !sig) return null;
+    try {
+        const given = Buffer.from(sig, 'hex');
+        const expected = Buffer.from(signSession(payload), 'hex');
+        if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
+            return null;
+        }
+        const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+        const ageMs = Date.now() - data.t;
+        if (!Number.isFinite(data.t) || ageMs < 0 || ageMs > SESSION_MAX_AGE_MS) {
+            return null;
+        }
+        return { elapsedSeconds: ageMs / 1000 };
+    } catch (e) {
+        return null;
+    }
+}
+
 // Health check
 app.get('/health', (req, res) => {
     const dbUp = mongoose.connection.readyState === 1;
@@ -77,6 +114,15 @@ app.get('/health', (req, res) => {
         version,
         timestamp: new Date().toISOString()
     });
+});
+
+// Issue a proof-of-play session token; the frontend requests one at game start
+app.post('/api/session', readLimiter, (req, res) => {
+    const payload = Buffer.from(JSON.stringify({
+        t: Date.now(),
+        n: crypto.randomBytes(8).toString('hex')
+    })).toString('base64url');
+    res.status(201).json({ success: true, token: `${payload}.${signSession(payload)}` });
 });
 
 // Get leaderboard top 100 scores
@@ -142,6 +188,27 @@ app.post('/api/scores', writeLimiter, async (req, res) => {
             return res.status(400).json({
                 success: false,
                 error: 'Level exceeds maximum allowed value'
+            });
+        }
+
+        // The session token bounds the claim by real elapsed time
+        const session = verifySession(req.body.sessionToken);
+        if (!session) {
+            return res.status(400).json({
+                success: false,
+                error: 'Valid session token is required'
+            });
+        }
+        if (score > session.elapsedSeconds * SCORE_PER_SECOND + SCORE_MARGIN) {
+            return res.status(400).json({
+                success: false,
+                error: 'Score is not plausible for this session'
+            });
+        }
+        if (level > session.elapsedSeconds / LEVEL_DURATION_SECONDS + 2) {
+            return res.status(400).json({
+                success: false,
+                error: 'Level is not plausible for this session'
             });
         }
 

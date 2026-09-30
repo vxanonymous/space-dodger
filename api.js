@@ -13,7 +13,25 @@ class LeaderboardAPI {
             : undefined;
     }
 
-    async submitScore(playerName, score, level) {
+    // Proof-of-play: fetched at game start so the server can bound the final
+    // score by the session's real age
+    async startSession() {
+        try {
+            const response = await fetch(`${this.baseURL}/api/session`, {
+                method: 'POST',
+                signal: this.requestTimeout()
+            });
+            if (!response.ok) {
+                throw new Error('Failed to start session');
+            }
+            const data = await response.json();
+            return data.token || null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    async submitScore(playerName, score, level, sessionToken) {
         try {
             const response = await fetch(`${this.baseURL}/api/scores`, {
                 method: 'POST',
@@ -23,7 +41,8 @@ class LeaderboardAPI {
                 body: JSON.stringify({
                     playerName: playerName.trim(),
                     score: Math.floor(score),
-                    level: Math.floor(level)
+                    level: Math.floor(level),
+                    sessionToken: sessionToken || undefined
                 }),
                 signal: this.requestTimeout()
             });
