@@ -20,6 +20,11 @@ class SpaceDodger {
         this.rafScheduled = false;
         this.boundGameLoop = this.gameLoop.bind(this);
 
+        this.paused = false;
+        this.pauseUsedThisGame = false;
+        this.pauseStartMs = 0;
+        this.pausedElapsedMs = 0;
+
         this.player = {
             x: START_X,
             y: CANVAS_HEIGHT - HEIGHT,
@@ -92,6 +97,55 @@ class SpaceDodger {
             // The canvas can be CSS-scaled down on small screens; map back to canvas coordinates
             this.mouseX = (e.clientX - rect.left) * (this.canvas.width / rect.width);
         });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.repeat || (e.key !== 'p' && e.key !== 'P')) return;
+            this.togglePause();
+        });
+    }
+
+    togglePause() {
+        if (this.state !== 'playing') return;
+
+        if (this.paused) {
+            this.paused = false;
+            this.pausedElapsedMs += Date.now() - this.pauseStartMs;
+            document.getElementById('pauseOverlay').classList.add('hidden');
+            return;
+        }
+
+        if (this.pauseUsedThisGame) {
+            this.showPauseDeniedNotice();
+            return;
+        }
+
+        this.paused = true;
+        this.pauseUsedThisGame = true;
+        this.pauseStartMs = Date.now();
+        document.getElementById('pauseOverlay').classList.remove('hidden');
+    }
+
+    showPauseDeniedNotice() {
+        const notice = document.createElement('div');
+        notice.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #333;
+            color: #fff;
+            padding: 15px 25px;
+            border-radius: 5px;
+            font-weight: bold;
+            z-index: 10000;
+            animation: slideIn 0.3s ease-out;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        `;
+        notice.textContent = '⏸️ Pause already used this game';
+        document.body.appendChild(notice);
+        setTimeout(() => {
+            notice.style.animation = 'slideOut 0.3s ease-out';
+            setTimeout(() => notice.remove(), 300);
+        }, 2000);
     }
 
     createStars() {
@@ -140,6 +194,11 @@ class SpaceDodger {
         this.obstacleSpawnRate = SPAWN_RATE;
         this.obstacleSpeed = BASE_SPEED;
         this.gameOverCalled = false;
+
+        this.paused = false;
+        this.pauseUsedThisGame = false;
+        this.pausedElapsedMs = 0;
+        document.getElementById('pauseOverlay').classList.add('hidden');
 
         // Reset achievement tracking for this game
         this.powerUpsCollectedThisGame = 0;
@@ -714,7 +773,8 @@ class SpaceDodger {
     }
 
     updateGameMetrics() {
-        const gameDuration = Date.now() - this.metrics.currentGameStartTime;
+        // Time spent paused doesn't count as play time
+        const gameDuration = Date.now() - this.metrics.currentGameStartTime - this.pausedElapsedMs;
         this.metrics.totalGamesPlayed++;
         this.metrics.totalPlayTime += gameDuration;
         this.metrics.averageScore = (this.metrics.averageScore * (this.metrics.totalGamesPlayed - 1) + this.score) / this.metrics.totalGamesPlayed;
@@ -892,6 +952,13 @@ class SpaceDodger {
 
         const deltaTime = (now - this.lastFrameTime) / 1000; // Convert to seconds
         this.lastFrameTime = now;
+
+        // While paused the world is frozen: gameTime stops, so score, boss timers,
+        // and power-up countdowns all resume exactly where they left off
+        if (this.paused) {
+            this.scheduleFrame();
+            return;
+        }
 
         // Cap deltaTime to prevent large jumps; skip bogus frames
         const clampedDeltaTime = Math.min(Math.max(deltaTime, 0), 1 / 30);

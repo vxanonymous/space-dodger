@@ -285,6 +285,16 @@ h1 {
     margin: 20px 0;
 }
 
+.pause-content {
+    text-align: center;
+    max-width: 400px;
+}
+
+.pause-note {
+    color: #888;
+    font-size: 0.9em;
+}
+
 .new-high-score {
     font-size: 1.3em;
     font-weight: bold;
