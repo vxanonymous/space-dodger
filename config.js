@@ -1,22 +1,27 @@
 // Game configuration constants
+
+// The deployed frontend talks to the hosted API; local dev (any localhost port)
+// talks to a local backend so playtest scores never reach the production leaderboard.
+const IS_LOCALHOST = typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
 export const CONFIG = {
     // Canvas dimensions
     CANVAS_WIDTH: 800,
     CANVAS_HEIGHT: 700,
-    
+
     // Player settings
     PLAYER: {
         START_X: 400,
-        START_Y: 650,
         WIDTH: 20,
         HEIGHT: 20,
-        SPEED: 5,
         COLOR: '#00ff00',
-        MOUSE_FOLLOW_SPEED: 0.3,
+        MOUSE_FOLLOW_SPEED: 0.3, // convergence per 1/60s frame; frame-rate normalized in updatePlayer
         INVINCIBILITY_DURATION: 1.0 // seconds
     },
-    
+
     // Obstacle settings
+    // SPAWN_RATE is the expected obstacles per 1/60s frame; speeds are px per 1/60s frame
     OBSTACLE: {
         SPAWN_RATE: 0.05,
         BASE_SPEED: 5,
@@ -26,7 +31,7 @@ export const CONFIG = {
         ASTEROID_CHANCE: 0.7,
         SPEED_VARIANCE: 2
     },
-    
+
     // Game settings
     GAME: {
         INITIAL_LIVES: 3,
@@ -35,10 +40,13 @@ export const CONFIG = {
         SPAWN_RATE_INCREASE: 0.01,
         SPEED_INCREASE: 1,
         BOSS_LEVEL_INTERVAL: 4,
-        MAX_SPAWN_RATE: 2,
-        MAX_SPEED: 200
+        // A spawn rate of 1 already means one obstacle every frame, so this cap
+        // must stay well below 1 to actually prevent the kill screen
+        MAX_SPAWN_RATE: 0.3,
+        // Px per 1/60s frame (20 = 1200 px/s, crossing the canvas in ~0.6s)
+        MAX_SPEED: 20
     },
-    
+
     // Boss settings
     BOSS: {
         X: 400,
@@ -49,12 +57,11 @@ export const CONFIG = {
         LEVEL_DURATION: 10,
         ATTACK_WINDOW_END: 8
     },
-    
+
     // Boss attack settings
     BOSS_ATTACKS: {
         SPIKE_COUNT: 3,
         SPIKE_WIDTH: 20,
-        SPIKE_HEIGHT: 700,
         SPIKE_WARNING_DURATION: 1,
         SPIKE_ATTACK_DURATION: 5,
         DOUBLE_SPIKE_COUNT: 5,
@@ -70,7 +77,7 @@ export const CONFIG = {
         GRAVITY_DURATION: 3,
         GRAVITY_SPEED_MULTIPLIER: 5
     },
-    
+
     // Visual settings
     VISUAL: {
         STAR_COUNT: 100,
@@ -88,18 +95,16 @@ export const CONFIG = {
         LEVEL_FLASH_DURATION: 0.1,
         LEVEL_FLASH_COLOR: '#ffffff'
     },
-    
+
     // Colors
     COLORS: {
         BACKGROUND: '#000',
         STAR: '#ffffff',
         WARNING: '#ffff00',
         SAFE_ZONE: '#00ff00',
-        DANGER_ZONE: 'rgba(255, 0, 0, 0.3)',
-        BOSS_HEALTH_BG: '#333',
-        BOSS_HEALTH_BAR: '#ff0000'
+        DANGER_ZONE: 'rgba(255, 0, 0, 0.3)'
     },
-    
+
     // LocalStorage keys
     STORAGE: {
         HIGH_SCORE: 'spaceDodgerHighScore',
@@ -107,16 +112,17 @@ export const CONFIG = {
         PLAYER_NAME: 'spaceDodgerPlayerName',
         ACHIEVEMENTS: 'spaceDodgerAchievements'
     },
-    
+
     // API settings
     API: {
-        BASE_URL: 'https://space-dodger-api.onrender.com',
-        LEADERBOARD_LIMIT: 100
+        BASE_URL: IS_LOCALHOST ? 'http://localhost:3000' : 'https://space-dodger-api.onrender.com',
+        LEADERBOARD_LIMIT: 100,
+        TIMEOUT_MS: 8000
     },
-    
+
     // Power-up settings
     POWER_UPS: {
-        SPAWN_RATE: 0.0005, // Chance per frame, approximately every 30-40 seconds
+        SPAWN_RATE: 0.0005, // Expected spawns per 1/60s frame, approximately every 30-40 seconds
         WIDTH: 25,
         HEIGHT: 25,
         FALL_SPEED: 1.5,
@@ -134,4 +140,3 @@ export const CONFIG = {
         }
     }
 };
-

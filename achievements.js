@@ -1,17 +1,46 @@
 // Achievement system
-import { CONFIG } from './config.js';
 import { StorageManager } from './storage.js';
+import { BOSS_ATTACK_PATTERNS } from './boss-attacks.js';
+
+// Single source of truth for achievement ids, display names, and icons
+export const ACHIEVEMENTS = [
+    { id: 'score_500', name: 'Reach 500 points', icon: '⭐' },
+    { id: 'score_1000', name: 'Reach 1000 points', icon: '⭐' },
+    { id: 'score_1500', name: 'Reach 1500 points', icon: '⭐' },
+    { id: 'score_2000', name: 'Reach 2000 points', icon: '⭐' },
+    { id: 'score_5000', name: 'Reach 5000 points', icon: '⭐' },
+    { id: 'perfect_run', name: 'Perfect Run (Score divisible by 100)', icon: '✨' },
+    { id: 'boss_spikes', name: 'Defeat Spikes Boss', icon: '👾' },
+    { id: 'boss_double_spikes', name: 'Defeat Double Spikes Boss', icon: '👾' },
+    { id: 'boss_wall', name: 'Defeat Wall Restriction Boss', icon: '👾' },
+    { id: 'boss_moving_safe', name: 'Defeat Moving Safe Zone Boss', icon: '👾' },
+    { id: 'boss_giant_obstacle', name: 'Defeat Giant Obstacle Boss', icon: '👾' },
+    { id: 'boss_double_obstacles', name: 'Defeat Double Obstacles Boss', icon: '👾' },
+    { id: 'boss_gravity', name: 'Defeat Gravity Attack Boss', icon: '👾' },
+    { id: 'all_bosses', name: 'Complete All Boss Types', icon: '👑' },
+    { id: 'shield_saved', name: 'Survived by Shield at 1 Life', icon: '🛡️' },
+    { id: 'powerups_3', name: 'Get 3 Power-ups in One Game', icon: '💎' },
+    { id: 'games_100', name: 'Play 100 Games', icon: '🎮' },
+    { id: 'total_score_50000', name: 'Total 50,000 Points Earned', icon: '🏅' },
+    { id: 'leaderboard_ranked', name: 'Get a Result on Global Leaderboard', icon: '🌐' },
+    { id: 'leaderboard_top1', name: 'Get Top 1 on Global Leaderboard', icon: '👑' }
+];
+
+const ACHIEVEMENT_NAMES = Object.fromEntries(ACHIEVEMENTS.map(a => [a.id, a.name]));
+
+const SCORE_MILESTONES = [500, 1000, 1500, 2000, 5000];
 
 export class AchievementManager {
     constructor(game) {
         this.game = game;
     }
-    
-    unlockAchievement(id, name) {
+
+    unlockAchievement(id) {
         if (this.game.achievements[id]) {
             return false;
         }
-        
+
+        const name = ACHIEVEMENT_NAMES[id] || id;
         this.game.achievements[id] = {
             unlocked: true,
             unlockedAt: Date.now(),
@@ -19,11 +48,11 @@ export class AchievementManager {
         };
         StorageManager.saveAchievements(this.game.achievements);
         this.updateAchievementsDisplay();
-        
+
         this.showAchievementNotification(name);
         return true;
     }
-    
+
     showAchievementNotification(name) {
         // Create notification element
         const notification = document.createElement('div');
@@ -42,108 +71,61 @@ export class AchievementManager {
         `;
         notification.innerHTML = `🏆 Achievement Unlocked!<br>${name}`;
         document.body.appendChild(notification);
-        
+
         // Remove after 3 seconds
         setTimeout(() => {
             notification.style.animation = 'slideOut 0.3s ease-out';
             setTimeout(() => notification.remove(), 300);
         }, 3000);
     }
-    
+
     checkAchievements() {
         // Score milestones
-        if (this.game.score >= 500 && !this.game.achievements.score_500) {
-            this.unlockAchievement('score_500', 'Reach 500 points');
-        }
-        if (this.game.score >= 1000 && !this.game.achievements.score_1000) {
-            this.unlockAchievement('score_1000', 'Reach 1000 points');
-        }
-        if (this.game.score >= 1500 && !this.game.achievements.score_1500) {
-            this.unlockAchievement('score_1500', 'Reach 1500 points');
-        }
-        if (this.game.score >= 2000 && !this.game.achievements.score_2000) {
-            this.unlockAchievement('score_2000', 'Reach 2000 points');
-        }
-        if (this.game.score >= 5000 && !this.game.achievements.score_5000) {
-            this.unlockAchievement('score_5000', 'Reach 5000 points');
-        }
-        
-        // Boss type achievements (one for each attack type)
-        const bossTypeNames = {
-            'spikes': 'Defeat Spikes Boss',
-            'double_spikes': 'Defeat Double Spikes Boss',
-            'wall': 'Defeat Wall Restriction Boss',
-            'moving_safe': 'Defeat Moving Safe Zone Boss',
-            'giant_obstacle': 'Defeat Giant Obstacle Boss',
-            'double_obstacles': 'Defeat Double Obstacles Boss',
-            'gravity': 'Defeat Gravity Attack Boss'
-        };
-        
-        this.game.bossAttackTypesDefeated.forEach(attackType => {
-            const achievementId = `boss_${attackType}`;
-            if (!this.game.achievements[achievementId]) {
-                this.unlockAchievement(achievementId, bossTypeNames[attackType] || `Defeat ${attackType} Boss`);
+        for (const milestone of SCORE_MILESTONES) {
+            if (this.game.score >= milestone) {
+                this.unlockAchievement(`score_${milestone}`);
             }
+        }
+
+        // Boss type achievements (one for each attack type)
+        this.game.bossAttackTypesDefeated.forEach(attackType => {
+            this.unlockAchievement(`boss_${attackType}`);
         });
-        
+
         // All boss types completed
-        const allBossTypes = ['spikes', 'double_spikes', 'wall', 'moving_safe', 'giant_obstacle', 'double_obstacles', 'gravity'];
-        const allBossesDefeated = allBossTypes.every(type => 
+        const allBossesDefeated = BOSS_ATTACK_PATTERNS.every(type =>
             this.game.achievements[`boss_${type}`]
         );
-        if (allBossesDefeated && !this.game.achievements.all_bosses) {
-            this.unlockAchievement('all_bosses', 'Complete All Boss Types');
+        if (allBossesDefeated) {
+            this.unlockAchievement('all_bosses');
         }
-        
+
         // Shield saved life
-        if (this.game.shieldSavedLife && !this.game.achievements.shield_saved) {
-            this.unlockAchievement('shield_saved', 'Survived by Shield at 1 Life');
+        if (this.game.shieldSavedLife) {
+            this.unlockAchievement('shield_saved');
         }
-        
+
         // 3 power-ups in one game
-        if (this.game.powerUpsCollectedThisGame >= 3 && !this.game.achievements.powerups_3) {
-            this.unlockAchievement('powerups_3', 'Get 3 Power-ups in One Game');
+        if (this.game.powerUpsCollectedThisGame >= 3) {
+            this.unlockAchievement('powerups_3');
         }
-        
+
         // 100 games played
-        if (this.game.metrics.totalGamesPlayed >= 100 && !this.game.achievements.games_100) {
-            this.unlockAchievement('games_100', 'Play 100 Games');
+        if (this.game.metrics.totalGamesPlayed >= 100) {
+            this.unlockAchievement('games_100');
         }
-        
+
         // Total 50000 points earned
-        if (this.game.totalScoreEarned >= 50000 && !this.game.achievements.total_score_50000) {
-            this.unlockAchievement('total_score_50000', 'Total 50,000 Points Earned');
+        if (this.game.totalScoreEarned >= 50000) {
+            this.unlockAchievement('total_score_50000');
         }
     }
-    
+
     updateAchievementsDisplay() {
         const achievementsList = document.getElementById('achievementsList');
         if (!achievementsList) return;
-        
-        const allAchievements = [
-            { id: 'score_500', name: 'Reach 500 points', icon: '⭐' },
-            { id: 'score_1000', name: 'Reach 1000 points', icon: '⭐' },
-            { id: 'score_1500', name: 'Reach 1500 points', icon: '⭐' },
-            { id: 'score_2000', name: 'Reach 2000 points', icon: '⭐' },
-            { id: 'score_5000', name: 'Reach 5000 points', icon: '⭐' },
-            { id: 'perfect_run', name: 'Perfect Run (Score divisible by 100)', icon: '✨' },
-            { id: 'boss_spikes', name: 'Defeat Spikes Boss', icon: '👾' },
-            { id: 'boss_double_spikes', name: 'Defeat Double Spikes Boss', icon: '👾' },
-            { id: 'boss_wall', name: 'Defeat Wall Restriction Boss', icon: '👾' },
-            { id: 'boss_moving_safe', name: 'Defeat Moving Safe Zone Boss', icon: '👾' },
-            { id: 'boss_giant_obstacle', name: 'Defeat Giant Obstacle Boss', icon: '👾' },
-            { id: 'boss_double_obstacles', name: 'Defeat Double Obstacles Boss', icon: '👾' },
-            { id: 'boss_gravity', name: 'Defeat Gravity Attack Boss', icon: '👾' },
-            { id: 'all_bosses', name: 'Complete All Boss Types', icon: '👑' },
-            { id: 'shield_saved', name: 'Survived by Shield at 1 Life', icon: '🛡️' },
-            { id: 'powerups_3', name: 'Get 3 Power-ups in One Game', icon: '💎' },
-            { id: 'games_100', name: 'Play 100 Games', icon: '🎮' },
-            { id: 'total_score_50000', name: 'Total 50,000 Points Earned', icon: '🏅' },
-            { id: 'leaderboard_ranked', name: 'Get a Result on Global Leaderboard', icon: '🌐' },
-            { id: 'leaderboard_top1', name: 'Get Top 1 on Global Leaderboard', icon: '👑' }
-        ];
-        
-        achievementsList.innerHTML = allAchievements.map(ach => {
+
+        achievementsList.innerHTML = ACHIEVEMENTS.map(ach => {
             const unlocked = this.game.achievements[ach.id];
             return `
                 <div style="
@@ -163,4 +145,3 @@ export class AchievementManager {
         }).join('');
     }
 }
-

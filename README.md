@@ -23,23 +23,26 @@ An arcade-style dodging game with progressive difficulty
 git clone <repo>
 cd space-dodger
 
-# Run frontend
+# Run frontend (either server works)
 python3 -m http.server 8000
-npx http-server
+npx http-server -p 8000
 http://localhost:8000
 ```
 
 ### Backend
-The frontend is currently configured to use the backend at `https://space-dodger-api.onrender.com`.
+The deployed frontend uses the backend at `https://space-dodger-api.onrender.com`. When the
+frontend is served from `localhost`/`127.0.0.1`, `config.js` automatically targets
+`http://localhost:3000` instead, so playtest scores never reach the production leaderboard.
+If no local backend is running, the game still works — leaderboard features just show as
+unavailable.
 
-For localhost:
+To run the backend locally:
 ```bash
 cd backend
 npm install
 cp env.example .env  # add MONGODB_URI
 npm start
 ```
-Then update `config.js` `API.BASE_URL` to `http://localhost:3000` for local testing.
 
 ## Tech Stack
 

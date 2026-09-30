@@ -1,12 +1,16 @@
 // Boss attack system
 import { CONFIG } from './config.js';
 
+// Single source of truth for the attack roster; achievements derive from this list
+export const BOSS_ATTACK_PATTERNS = ['spikes', 'double_spikes', 'wall', 'moving_safe', 'giant_obstacle', 'double_obstacles', 'gravity'];
+
 export class BossAttackManager {
     constructor(game) {
         this.game = game;
         this.attacks = [];
         this.warnings = [];
         this.gravityScheduled = false;
+        this.gravityActiveTimer = 0;
         this.attackTypesUsed = new Set();
     }
 
@@ -14,17 +18,20 @@ export class BossAttackManager {
         this.attacks = [];
         this.warnings = [];
         this.gravityScheduled = false;
+        this.gravityActiveTimer = 0;
         this.attackTypesUsed = new Set();
     }
 
     update(deltaTime) {
+        if (this.gravityActiveTimer > 0) {
+            this.gravityActiveTimer -= deltaTime;
+        }
         this.updateWarnings(deltaTime);
         this.updateAttacks(deltaTime);
     }
 
     bossAttack() {
-        const patterns = ['spikes', 'double_spikes', 'wall', 'moving_safe', 'giant_obstacle', 'double_obstacles', 'gravity'];
-        const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+        const pattern = BOSS_ATTACK_PATTERNS[Math.floor(Math.random() * BOSS_ATTACK_PATTERNS.length)];
 
         this.attackTypesUsed.add(pattern);
         switch (pattern) {
@@ -51,16 +58,16 @@ export class BossAttackManager {
                 break;
         }
     }
-    
+
     getAttackTypesUsed() {
         return Array.from(this.attackTypesUsed);
     }
 
     // Attack creation methods
     createSpikes() {
-        const { SPIKE_COUNT, SPIKE_WIDTH, SPIKE_HEIGHT, SPIKE_WARNING_DURATION } = CONFIG.BOSS_ATTACKS;
+        const { SPIKE_COUNT, SPIKE_WIDTH, SPIKE_WARNING_DURATION } = CONFIG.BOSS_ATTACKS;
         const { CANVAS_WIDTH, CANVAS_HEIGHT } = CONFIG;
-        
+
         // Create 3 spikes equally distributed
         const gap = CANVAS_WIDTH / (SPIKE_COUNT + 1);
         for (let i = 0; i < SPIKE_COUNT; i++) {
@@ -78,9 +85,9 @@ export class BossAttackManager {
     }
 
     createDoubleSpikes() {
-        const { DOUBLE_SPIKE_COUNT, SPIKE_WIDTH, SPIKE_HEIGHT, SPIKE_WARNING_DURATION } = CONFIG.BOSS_ATTACKS;
+        const { DOUBLE_SPIKE_COUNT, SPIKE_WIDTH, SPIKE_WARNING_DURATION } = CONFIG.BOSS_ATTACKS;
         const { CANVAS_WIDTH, CANVAS_HEIGHT } = CONFIG;
-        
+
         // Create 5 random vertical spikes
         for (let i = 0; i < DOUBLE_SPIKE_COUNT; i++) {
             this.warnings.push({
@@ -99,7 +106,7 @@ export class BossAttackManager {
     createWallRestriction() {
         const { CANVAS_WIDTH, CANVAS_HEIGHT } = CONFIG;
         const { SPIKE_WARNING_DURATION } = CONFIG.BOSS_ATTACKS;
-        
+
         this.warnings.push({
             x: 0,
             y: 0,
@@ -115,7 +122,7 @@ export class BossAttackManager {
     createMovingSafe() {
         const { CANVAS_WIDTH, CANVAS_HEIGHT } = CONFIG;
         const { MOVING_SAFE_WIDTH, MOVING_SAFE_SPEED, SPIKE_WARNING_DURATION } = CONFIG.BOSS_ATTACKS;
-        
+
         this.warnings.push({
             x: 0,
             y: 0,
@@ -132,11 +139,11 @@ export class BossAttackManager {
     createGiantObstacle() {
         const { CANVAS_WIDTH } = CONFIG;
         const { GIANT_OBSTACLE_RADIUS, GIANT_OBSTACLE_START_Y, SPIKE_WARNING_DURATION } = CONFIG.BOSS_ATTACKS;
-        
+
         const minX = GIANT_OBSTACLE_RADIUS;
         const maxX = CANVAS_WIDTH - GIANT_OBSTACLE_RADIUS;
         const randomX = Math.random() * (maxX - minX) + minX;
-        
+
         this.warnings.push({
             x: randomX - GIANT_OBSTACLE_RADIUS,
             y: GIANT_OBSTACLE_START_Y,
@@ -166,7 +173,7 @@ export class BossAttackManager {
         for (let i = this.warnings.length - 1; i >= 0; i--) {
             const warning = this.warnings[i];
             warning.timer += deltaTime;
-            
+
             if (warning.timer >= warning.duration) {
                 this.convertWarningToAttack(warning);
                 this.warnings.splice(i, 1);
@@ -175,9 +182,9 @@ export class BossAttackManager {
     }
 
     convertWarningToAttack(warning) {
-        const { WALL_TARGET_GAP, WALL_COLLAPSE_SPEED, GIANT_OBSTACLE_FALL_SPEED } = CONFIG.BOSS_ATTACKS;
+        const { WALL_TARGET_GAP, WALL_COLLAPSE_SPEED } = CONFIG.BOSS_ATTACKS;
         const { CANVAS_WIDTH } = CONFIG;
-        
+
         const attack = {
             x: warning.x,
             y: warning.y,
@@ -208,11 +215,11 @@ export class BossAttackManager {
     updateAttacks(deltaTime) {
         const { CANVAS_WIDTH, CANVAS_HEIGHT } = CONFIG;
         const { SPIKE_ATTACK_DURATION, DOUBLE_OBSTACLES_DURATION, GIANT_OBSTACLE_FALL_SPEED, GIANT_OBSTACLE_RADIUS } = CONFIG.BOSS_ATTACKS;
-        
+
         for (let i = this.attacks.length - 1; i >= 0; i--) {
             const attack = this.attacks[i];
             attack.timer += deltaTime;
-            
+
             if (attack.type === 'moving_safe') {
                 attack.x += attack.speed * deltaTime * 60;
                 if (attack.x > CANVAS_WIDTH) {
@@ -222,6 +229,10 @@ export class BossAttackManager {
                 if (attack.leftWall < attack.rightWall - attack.targetGap) {
                     attack.leftWall += attack.collapseSpeed * deltaTime * 60;
                     attack.rightWall -= attack.collapseSpeed * deltaTime * 60;
+                }
+                // Expire like spikes do, so the boss isn't stuck "busy" for the rest of the fight
+                if (attack.timer > SPIKE_ATTACK_DURATION) {
+                    this.attacks.splice(i, 1);
                 }
             } else if (attack.type === 'giant_obstacle') {
                 attack.centerY += GIANT_OBSTACLE_FALL_SPEED * deltaTime * 60;
@@ -240,20 +251,21 @@ export class BossAttackManager {
 
     handleGravityAttack(bossLevelStartTime, gameTime) {
         const { GRAVITY_TRIGGER_DELAY, GRAVITY_DURATION } = CONFIG.BOSS_ATTACKS;
-        
+
         if (this.gravityScheduled && gameTime - bossLevelStartTime >= GRAVITY_TRIGGER_DELAY) {
             for (const obstacle of this.game.obstacles) {
                 obstacle.gravityAffected = true;
                 obstacle.gravityTimer = GRAVITY_DURATION;
             }
             this.gravityScheduled = false;
+            this.gravityActiveTimer = GRAVITY_DURATION;
         }
     }
 
     // Drawing methods
     drawWarnings() {
         const { WARNING_ALPHA } = CONFIG.VISUAL;
-        
+
         for (const warning of this.warnings) {
             this.game.ctx.fillStyle = warning.color;
             this.game.ctx.globalAlpha = WARNING_ALPHA;
@@ -266,19 +278,19 @@ export class BossAttackManager {
         const { CANVAS_WIDTH, CANVAS_HEIGHT } = CONFIG;
         const { SAFE_ZONE_ALPHA } = CONFIG.VISUAL;
         const { DANGER_ZONE } = CONFIG.COLORS;
-        
+
         for (const attack of this.attacks) {
             if (attack.type === 'double_obstacles' || attack.type === 'gravity') {
                 continue;
             }
-            
+
             this.game.ctx.fillStyle = attack.color;
-            
+
             if (attack.type === 'moving_safe') {
                 this.game.ctx.globalAlpha = SAFE_ZONE_ALPHA;
                 this.game.ctx.fillRect(attack.x, attack.y, attack.width, attack.height);
                 this.game.ctx.globalAlpha = 1.0;
-                
+
                 // Draw deadly areas
                 this.game.ctx.fillStyle = DANGER_ZONE;
                 this.game.ctx.fillRect(0, attack.y, attack.x, attack.height);
@@ -301,14 +313,14 @@ export class BossAttackManager {
             if (attack.type === 'double_obstacles' || attack.type === 'gravity') {
                 continue;
             }
-            
+
             let collision = false;
-            
+
             if (attack.type === 'moving_safe') {
                 // Player is safe if inside the safe zone
-                collision = !(player.x >= attack.x && 
-                           player.x + player.width <= attack.x + attack.width && 
-                           player.y >= attack.y && 
+                collision = !(player.x >= attack.x &&
+                           player.x + player.width <= attack.x + attack.width &&
+                           player.y >= attack.y &&
                            player.y + player.height <= attack.y + attack.height);
             } else if (attack.type === 'wall_restriction') {
                 collision = player.x < attack.leftWall || player.x + player.width > attack.rightWall;
@@ -320,7 +332,7 @@ export class BossAttackManager {
             } else {
                 collision = this.game.checkCollision(player, attack);
             }
-            
+
             if (collision) {
                 return true;
             }
@@ -338,6 +350,11 @@ export class BossAttackManager {
     }
 
     isIdle() {
-        return this.attacks.length === 0 && this.warnings.length === 0;
+        // A scheduled or still-running gravity attack counts as busy, otherwise a
+        // second pattern would stack on top of the 5x-speed obstacles
+        return this.attacks.length === 0 &&
+               this.warnings.length === 0 &&
+               !this.gravityScheduled &&
+               this.gravityActiveTimer <= 0;
     }
 }

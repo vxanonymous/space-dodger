@@ -2,32 +2,37 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Render terminates TLS at its proxy; trust it so req.ip is the real client IP
+app.set('trust proxy', 1);
+
 // Middleware
+const ALLOWED_ORIGIN = /^https:\/\/space-dodger\.surge\.sh$|^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 app.use(cors({
-    origin: [
-        'https://space-dodger.surge.sh',
-        'http://localhost:8000',
-        'http://127.0.0.1:8000',
-        'http://localhost:3000'
-    ],
+    origin: (origin, callback) => callback(null, !origin || ALLOWED_ORIGIN.test(origin)),
     credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '2kb' }));
+
+const readLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
+const writeLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/space-dodger';
 
-mongoose.connect(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-})
-.then(() => console.log('Connected to MongoDB'))
-.catch(err => console.error('MongoDB connection error:', err));
+mongoose.connect(MONGODB_URI)
+    .then(() => console.log('Connected to MongoDB'))
+    .catch(err => {
+        console.error('MongoDB connection error:', err);
+        // Exit so the host restarts the service and retries, instead of serving
+        // requests that buffer for 10s and then fail
+        process.exit(1);
+    });
 
 // Score schema
 const scoreSchema = new mongoose.Schema({
@@ -51,32 +56,37 @@ const scoreSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     }
-}, {
-    timestamps: true
 });
 
-// Index for leaderboard queries
-scoreSchema.index({ score: -1 });
-scoreSchema.index({ timestamp: -1 });
+// One compound index serves the leaderboard sort and the rank counts
+scoreSchema.index({ score: -1, timestamp: 1 });
 
 const Score = mongoose.model('Score', scoreSchema);
 
+const MAX_LEADERBOARD_LIMIT = 100;
+const MAX_REASONABLE_SCORE = 10000000;
+const MAX_REASONABLE_LEVEL = 10000;
+
 // Health check
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    const dbUp = mongoose.connection.readyState === 1;
+    res.status(dbUp ? 200 : 503).json({
+        status: dbUp ? 'ok' : 'degraded',
+        timestamp: new Date().toISOString()
+    });
 });
 
 // Get leaderboard top 100 scores
-app.get('/api/leaderboard', async (req, res) => {
+app.get('/api/leaderboard', readLimiter, async (req, res) => {
     try {
-        const limit = parseInt(req.query.limit) || 100;
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || MAX_LEADERBOARD_LIMIT, 1), MAX_LEADERBOARD_LIMIT);
         // Sort by score descending, then by timestamp ascending
         const topScores = await Score.find()
             .sort({ score: -1, timestamp: 1 })
             .limit(limit)
             .select('playerName score level timestamp')
             .lean();
-        
+
         res.json({
             success: true,
             leaderboard: topScores,
@@ -92,10 +102,10 @@ app.get('/api/leaderboard', async (req, res) => {
 });
 
 // Submit a new score
-app.post('/api/scores', async (req, res) => {
+app.post('/api/scores', writeLimiter, async (req, res) => {
     try {
         const { playerName, score, level } = req.body;
-        
+
         // Validation
         if (!playerName || typeof playerName !== 'string' || playerName.trim().length === 0) {
             return res.status(400).json({
@@ -103,59 +113,66 @@ app.post('/api/scores', async (req, res) => {
                 error: 'Player name is required'
             });
         }
-        
-        if (typeof score !== 'number' || score < 0) {
+
+        if (typeof score !== 'number' || !Number.isFinite(score) || score < 0) {
             return res.status(400).json({
                 success: false,
                 error: 'Valid score is required'
             });
         }
-        
-        if (typeof level !== 'number' || level < 1) {
+
+        if (typeof level !== 'number' || !Number.isFinite(level) || level < 1) {
             return res.status(400).json({
                 success: false,
                 error: 'Valid level is required'
             });
         }
-        
-        const MAX_REASONABLE_SCORE = 10000000;
-        const MAX_REASONABLE_LEVEL = 10000;
-        
+
         if (score > MAX_REASONABLE_SCORE) {
             return res.status(400).json({
                 success: false,
                 error: 'Score exceeds maximum allowed value'
             });
         }
-        
+
         if (level > MAX_REASONABLE_LEVEL) {
             return res.status(400).json({
                 success: false,
                 error: 'Level exceeds maximum allowed value'
             });
         }
-        
+
+        // Strip characters with HTML meaning; the frontend renders names as text,
+        // but stored data must not depend on every client doing so
+        const safeName = playerName.replace(/[<>&"'`]/g, '').trim().substring(0, 20);
+        if (safeName.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Player name contains no usable characters'
+            });
+        }
+
         // Create and save score
         const newScore = new Score({
-            playerName: playerName.trim().substring(0, 20),
+            playerName: safeName,
             score: Math.floor(score),
             level: Math.floor(level),
             timestamp: new Date()
         });
-        
+
         await newScore.save();
-        
-        // Get player's rank. Count scores that are either:
+
+        // Get player's rank from the stored (floored) value. Count scores that are either:
         // 1. Higher score
         // 2. Same score but with earlier timestamp
         const betterScores = await Score.countDocuments({
             $or: [
-                { score: { $gt: score } },
-                { score: score, timestamp: { $lt: newScore.timestamp } }
+                { score: { $gt: newScore.score } },
+                { score: newScore.score, timestamp: { $lt: newScore.timestamp } }
             ]
         });
         const rank = betterScores + 1;
-        
+
         res.status(201).json({
             success: true,
             score: newScore,
@@ -171,14 +188,14 @@ app.post('/api/scores', async (req, res) => {
 });
 
 // Get player's best score
-app.get('/api/player/:playerName', async (req, res) => {
+app.get('/api/player/:playerName', readLimiter, async (req, res) => {
     try {
         const playerName = req.params.playerName.trim();
         const bestScore = await Score.findOne({ playerName })
             .sort({ score: -1 })
             .select('playerName score level timestamp')
             .lean();
-        
+
         if (!bestScore) {
             return res.json({
                 success: true,
@@ -186,9 +203,9 @@ app.get('/api/player/:playerName', async (req, res) => {
                 message: 'No scores found for this player'
             });
         }
-        
+
         const rank = await Score.countDocuments({ score: { $gt: bestScore.score } }) + 1;
-        
+
         res.json({
             success: true,
             score: bestScore,
@@ -207,4 +224,3 @@ app.get('/api/player/:playerName', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`Space Dodger API server running on port ${PORT}`);
 });
-

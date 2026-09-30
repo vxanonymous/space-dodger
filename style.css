@@ -6,7 +6,7 @@ body {
     background: #000;
     font-family: 'Courier New', monospace;
     color: #fff;
-    overflow: hidden;
+    overflow: auto;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -22,6 +22,12 @@ body {
     display: block;
     border: 2px solid #333;
     background: #000;
+    /* Scale down on short/narrow viewports so the ship at the bottom edge is
+       always visible; game.js maps mouse coordinates back to canvas space */
+    max-width: calc(100vw - 4px);
+    max-height: calc(100vh - 4px);
+    width: auto;
+    height: auto;
 }
 
 .overlay {
@@ -147,17 +153,6 @@ h1 {
     display: block;
 }
 
-.instructions {
-    margin-top: 30px;
-    text-align: left;
-    background: #222;
-    padding: 20px;
-    border-radius: 5px;
-    border: 1px solid #333;
-    max-height: 400px;
-    overflow-y: auto;
-}
-
 .instruction-section {
     margin-bottom: 25px;
     padding-bottom: 20px;
@@ -200,32 +195,6 @@ h1 {
 }
 
 .content-section strong {
-    color: #00ff00;
-}
-
-.instructions h3 {
-    color: #00ff00;
-    margin-top: 0;
-    margin-bottom: 15px;
-    font-size: 1.2em;
-}
-
-.instructions p {
-    margin: 10px 0;
-    line-height: 1.4;
-}
-
-.instructions ul {
-    margin: 10px 0;
-    padding-left: 20px;
-}
-
-.instructions li {
-    margin: 8px 0;
-    line-height: 1.4;
-}
-
-.instructions strong {
     color: #00ff00;
 }
 
@@ -316,6 +285,14 @@ h1 {
     margin: 20px 0;
 }
 
+.new-high-score {
+    font-size: 1.3em;
+    font-weight: bold;
+    color: #00ff00;
+    text-shadow: 0 0 10px #00ff00;
+    margin: 15px 0;
+}
+
 .hidden {
     display: none !important;
 }
@@ -352,24 +329,17 @@ h1 {
         max-height: 300px;
         padding: 15px;
     }
-    
-    .instructions {
-        max-height: 300px;
-        padding: 15px;
-    }
-    
+
     .instruction-section {
         margin-bottom: 20px;
         padding-bottom: 15px;
     }
-    
-    .content-section h3,
-    .instructions h3 {
+
+    .content-section h3 {
         font-size: 1.1em;
     }
-    
-    .content-section li,
-    .instructions li {
+
+    .content-section li {
         font-size: 0.9em;
     }
     
