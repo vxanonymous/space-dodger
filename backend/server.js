@@ -5,6 +5,8 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
+const { version } = require('./package.json');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -72,6 +74,7 @@ app.get('/health', (req, res) => {
     const dbUp = mongoose.connection.readyState === 1;
     res.status(dbUp ? 200 : 503).json({
         status: dbUp ? 'ok' : 'degraded',
+        version,
         timestamp: new Date().toISOString()
     });
 });
