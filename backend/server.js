@@ -71,12 +71,27 @@ const MAX_REASONABLE_SCORE = 10000000;
 const MAX_REASONABLE_LEVEL = 10000;
 
 // Proof-of-play: a token issued at game start bounds any later submission by
-// real elapsed time — the game scores exactly SCORE_PER_SECOND, so a claimed
+// real elapsed time. The game scores exactly SCORE_PER_SECOND, so a claimed
 // score can't exceed what the session's wall-clock age allows.
+//
+// The age bound is only half of it: a token is also spendable exactly once
+// (see UsedToken below), so the ceiling can't be farmed by replaying one token.
+// Max age caps how high that ceiling can climb while an attacker simply waits,
+// which is why it is hours rather than a day.
 const SCORE_PER_SECOND = 10;
 const LEVEL_DURATION_SECONDS = 10;
-const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const SESSION_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const SCORE_MARGIN = 50;
+
+// Nonces of tokens that have already been submitted. Mongo expires each row
+// once the token itself would be too old to accept, so this stays small.
+const usedTokenSchema = new mongoose.Schema({
+    nonce: { type: String, required: true, unique: true },
+    createdAt: { type: Date, default: Date.now, expires: SESSION_MAX_AGE_MS / 1000 }
+});
+
+const UsedToken = mongoose.model('UsedToken', usedTokenSchema);
+
 // Derived from the DB URI when no explicit secret is set: stable across
 // restarts, never sent to clients
 const TOKEN_SECRET = process.env.SCORE_TOKEN_SECRET ||
@@ -100,9 +115,24 @@ function verifySession(token) {
         if (!Number.isFinite(data.t) || ageMs < 0 || ageMs > SESSION_MAX_AGE_MS) {
             return null;
         }
-        return { elapsedSeconds: ageMs / 1000 };
+        if (typeof data.n !== 'string' || data.n.length === 0) {
+            return null;
+        }
+        return { elapsedSeconds: ageMs / 1000, nonce: data.n };
     } catch (e) {
         return null;
+    }
+}
+
+// Spends a session token, returning false if it was already spent. The unique
+// index decides the winner when two requests race on the same token.
+async function spendSession(nonce) {
+    try {
+        await UsedToken.create({ nonce });
+        return true;
+    } catch (error) {
+        if (error && error.code === 11000) return false;
+        throw error;
     }
 }
 
@@ -133,7 +163,7 @@ app.get('/api/leaderboard', readLimiter, async (req, res) => {
         const topScores = await Score.find()
             .sort({ score: -1, timestamp: 1 })
             .limit(limit)
-            .select('playerName score level timestamp')
+            .select('playerName score level timestamp -_id')
             .lean();
 
         res.json({
@@ -222,6 +252,15 @@ app.post('/api/scores', writeLimiter, async (req, res) => {
             });
         }
 
+        // Spend the token only once the submission is known to be acceptable, so
+        // a rejected attempt doesn't strand a legitimate player's session
+        if (!await spendSession(session.nonce)) {
+            return res.status(409).json({
+                success: false,
+                error: 'This session has already submitted a score'
+            });
+        }
+
         // Create and save score
         const newScore = new Score({
             playerName: safeName,
@@ -243,9 +282,16 @@ app.post('/api/scores', writeLimiter, async (req, res) => {
         });
         const rank = betterScores + 1;
 
+        // Echo back only the public fields; the raw document would also carry
+        // the internal _id and __v
         res.status(201).json({
             success: true,
-            score: newScore,
+            score: {
+                playerName: newScore.playerName,
+                score: newScore.score,
+                level: newScore.level,
+                timestamp: newScore.timestamp
+            },
             rank: rank
         });
     } catch (error) {
@@ -263,7 +309,7 @@ app.get('/api/player/:playerName', readLimiter, async (req, res) => {
         const playerName = req.params.playerName.trim();
         const bestScore = await Score.findOne({ playerName })
             .sort({ score: -1 })
-            .select('playerName score level timestamp')
+            .select('playerName score level timestamp -_id')
             .lean();
 
         if (!bestScore) {

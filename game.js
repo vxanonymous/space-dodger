@@ -66,6 +66,7 @@ class SpaceDodger {
 
         this.mouseX = START_X;
         this.submissionSeq = 0;
+        this.scoreSubmitted = false;
 
         this.score = 0;
         this.lastDisplayedScore = -1;
@@ -221,6 +222,7 @@ class SpaceDodger {
         this.obstacleSpawnRate = SPAWN_RATE;
         this.obstacleSpeed = BASE_SPEED;
         this.gameOverCalled = false;
+        this.scoreSubmitted = false;
 
         this.paused = false;
         this.pauseUsedThisGame = false;
@@ -848,7 +850,7 @@ class SpaceDodger {
     }
 
     updateAllHighScoreDisplays() {
-        const elements = ['menuHighScore', 'highScore', 'gameOverHighScore', 'prominentHighScore'];
+        const elements = ['highScore', 'gameOverHighScore', 'prominentHighScore'];
         elements.forEach(id => {
             const element = document.getElementById(id);
             if (element) {
@@ -912,6 +914,12 @@ class SpaceDodger {
     }
 
     async submitScoreToLeaderboard(playerName) {
+        // The session token is spent by the first accepted submission, so a
+        // second attempt for the same game would come back 409 and replace a
+        // good rank with an error
+        if (this.scoreSubmitted) return;
+        this.scoreSubmitted = true;
+
         // A quick restart can start a newer submission; only the latest may
         // write to the rank line
         const seq = ++this.submissionSeq;
@@ -1029,6 +1037,14 @@ class SpaceDodger {
 
         this.update(clampedDeltaTime);
         this.renderer.render();
+
+        // Once the death explosion has faded there is nothing left to animate
+        // behind the game-over overlay, so stop burning frames. startGame()
+        // sees gameLoopRunning is false and restarts the loop.
+        if (this.state === 'gameOver' && this.explosions.length === 0) {
+            this.gameLoopRunning = false;
+            return;
+        }
 
         this.scheduleFrame();
     }

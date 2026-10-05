@@ -129,8 +129,8 @@
 
     <!-- Achievement Details Popup -->
     <div id="achievementModal" class="overlay hidden">
-        <div class="menu-content achievement-modal">
-            <div id="achModalIcon" class="ach-modal-icon"></div>
+        <div class="menu-content achievement-modal" role="dialog" aria-modal="true" aria-labelledby="achModalName">
+            <div id="achModalIcon" class="ach-modal-icon" aria-hidden="true"></div>
             <h3 id="achModalName"></h3>
             <p id="achModalDesc"></p>
             <div id="achModalProgress" class="ach-progress hidden">

@@ -90,7 +90,6 @@ export const CONFIG = {
         EXPLOSION_COLOR: '#ff0000',
         WARNING_ALPHA: 0.5,
         SAFE_ZONE_ALPHA: 0.2,
-        DANGER_ZONE_ALPHA: 0.3,
         SCREEN_SHAKE_INTENSITY: 10,
         SCREEN_SHAKE_DURATION: 0.3,
         LEVEL_FLASH_DURATION: 0.1,
@@ -130,14 +129,12 @@ export const CONFIG = {
         ROTATION_SPEED: 2, // rad/s
         SHIELD: {
             COLOR: '#00ffff',
-            DURATION: 10,
-            NAME: 'Shield'
+            DURATION: 10
         },
         SLOW_DOWN: {
             COLOR: '#ffff00',
             DURATION: 10,
-            SPEED_REDUCTION: 0.20, // 20% reduction
-            NAME: 'Slow Down'
+            SPEED_REDUCTION: 0.20 // 20% reduction
         }
     }
 };
