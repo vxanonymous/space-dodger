@@ -228,6 +228,28 @@ h1 {
     font-size: 0.9em;
 }
 
+.personal-best {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #333;
+}
+
+.personal-best h3 {
+    color: #00ff00;
+    margin: 0 0 10px 0;
+    font-size: 1.1em;
+}
+
+.personal-best p {
+    margin: 5px 0;
+    font-size: 0.9em;
+}
+
+.personal-best-rank {
+    color: #00ff00;
+    font-weight: bold;
+}
+
 .about-section {
     text-align: left;
 }
