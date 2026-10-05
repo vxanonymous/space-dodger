@@ -50,8 +50,12 @@ export class StorageManager {
 
     static loadAchievements() {
         try {
-            const saved = localStorage.getItem(CONFIG.STORAGE.ACHIEVEMENTS);
-            return saved ? JSON.parse(saved) : {};
+            const saved = JSON.parse(localStorage.getItem(CONFIG.STORAGE.ACHIEVEMENTS));
+            // Achievements are looked up and assigned by id, which throws in strict
+            // mode on anything but a plain object. Corrupt storage must not brick
+            // the game before it starts.
+            const usable = saved && typeof saved === 'object' && !Array.isArray(saved);
+            return usable ? saved : {};
         } catch (e) {
             return {};
         }

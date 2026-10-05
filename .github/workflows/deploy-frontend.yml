@@ -3,17 +3,13 @@ name: Deploy frontend to Surge
 on:
   push:
     branches: [main]
+    # '*' does not match '/', so these patterns cover every root-level frontend
+    # file and can never match anything under backend/
     paths:
       - 'index.html'
       - 'style.css'
-      - 'config.js'
-      - 'api.js'
-      - 'storage.js'
-      - 'achievements.js'
-      - 'boss-attacks.js'
-      - 'game.js'
-      - 'menu.js'
-      - 'rendering.js'
+      - '*.js'
+      - '.github/workflows/deploy-frontend.yml'
 
 jobs:
   deploy:
@@ -23,12 +19,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # Only the frontend files are published — deploying the repo root would
-      # expose backend config; keep this list in sync with the site's files
+      # Only the frontend is published; deploying the repo root would expose
+      # backend config. The glob picks up new modules on its own, and the
+      # backend lives in a subdirectory so it can never be caught by it.
       - name: Stage frontend files
         run: |
           mkdir stage
-          cp index.html style.css config.js api.js storage.js achievements.js boss-attacks.js game.js menu.js rendering.js stage/
+          cp index.html style.css *.js stage/
+          ls -1 stage/
       - name: Deploy to Surge
         run: npx surge ./stage space-dodger.surge.sh --token "$SURGE_TOKEN"
         env:
