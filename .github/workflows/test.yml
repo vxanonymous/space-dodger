@@ -11,12 +11,21 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # The runner's own Node version is part of what is being tested: the
+      # test script has to stay on syntax every supported release accepts,
+      # and `node --test` has gained argument forms along the way that older
+      # ones reject.
+      matrix:
+        node-version: [20, 22]
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install test dependencies
