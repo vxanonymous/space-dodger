@@ -307,6 +307,40 @@ describe('POST /api/player/best', () => {
         assert.equal(res.body.matchedBy, 'playerName');
     });
 
+    test('the name fallback cannot reach runs someone has already claimed', async (t) => {
+        if (notReady(t)) return;
+        // Otherwise identity is decorative: anyone could type an existing
+        // player's name and be handed that player's record as their own.
+        const owner = '7'.repeat(32);
+        const stranger = '8'.repeat(32);
+        await submit({ playerName: 'Vinh', score: 1769, playerId: owner });
+
+        const res = await post('/api/player/best', { playerId: stranger, playerName: 'Vinh' });
+        assert.equal(res.body.score, null, "a stranger must not inherit a claimed player's best");
+    });
+
+    test('a claimed run is still reachable by the id that owns it', async (t) => {
+        if (notReady(t)) return;
+        const owner = '7'.repeat(32);
+        await submit({ playerName: 'Vinh', score: 1769, playerId: owner });
+
+        const res = await post('/api/player/best', { playerId: owner, playerName: 'Vinh' });
+        assert.equal(res.body.score.score, 1769);
+        assert.equal(res.body.matchedBy, 'playerId');
+    });
+
+    test('unclaimed and claimed runs under one name stay separate', async (t) => {
+        if (notReady(t)) return;
+        const owner = '7'.repeat(32);
+        await submit({ playerName: 'Vinh', score: 1769, playerId: owner }); // claimed
+        await submit({ playerName: 'Vinh', score: 300 });                   // legacy
+
+        // A client with no id of its own still reaches the unclaimed run
+        const legacy = await post('/api/player/best', { playerName: 'Vinh' });
+        assert.equal(legacy.body.score.score, 300);
+        assert.equal(legacy.body.matchedBy, 'playerName');
+    });
+
     test('prefers the id over the name when both match different rows', async (t) => {
         if (notReady(t)) return;
         const playerId = '1'.repeat(32);
