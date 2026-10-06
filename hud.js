@@ -37,12 +37,13 @@ export class HUD {
         if (this.level) this.level.textContent = bossActive ? `${level} - BOSS!` : level;
     }
 
-    renderPowerUps({ hasShield, shieldTimer, slowDownActive, slowDownTimer }) {
+    renderPowerUps({ hasShield, shieldTimer, slowDownActive, slowDownTimer, shrinkActive, shrinkTimer }) {
         if (!this.powerUpStatus) return;
 
         const parts = [];
         if (hasShield) parts.push(['pu-shield', `🛡️ Shield (${Math.ceil(shieldTimer)}s)`]);
         if (slowDownActive) parts.push(['pu-slow', `⏱️ Slow Down (${Math.ceil(slowDownTimer)}s)`]);
+        if (shrinkActive) parts.push(['pu-shrink', `🔽 Shrink (${Math.ceil(shrinkTimer)}s)`]);
 
         const key = parts.map(([, label]) => label).join(' | ');
         if (key === this.lastPowerUpKey) return;

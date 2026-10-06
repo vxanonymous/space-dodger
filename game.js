@@ -53,6 +53,8 @@ class SpaceDodger {
         this.slowDownActive = false;
         this.slowDownTimer = 0;
         this.shieldTimer = 0;
+        this.shrinkActive = false;
+        this.shrinkTimer = 0;
 
         this.obstacles = [];
         this.explosions = [];
@@ -227,7 +229,9 @@ class SpaceDodger {
             hasShield: this.player.hasShield,
             shieldTimer: this.shieldTimer,
             slowDownActive: this.slowDownActive,
-            slowDownTimer: this.slowDownTimer
+            slowDownTimer: this.slowDownTimer,
+            shrinkActive: this.shrinkActive,
+            shrinkTimer: this.shrinkTimer
         });
     }
 
@@ -250,6 +254,7 @@ class SpaceDodger {
         this.updateLevelFlash(deltaTime);
         this.updateSlowDown(deltaTime);
         this.updateShield(deltaTime);
+        this.updateShrink(deltaTime);
         this.updateObstacles(deltaTime);
         this.updateExplosions(deltaTime);
         this.updateStars(deltaTime);
@@ -283,10 +288,27 @@ class SpaceDodger {
         const { CANVAS_WIDTH } = CONFIG;
         const { MOUSE_FOLLOW_SPEED, WIDTH } = CONFIG.PLAYER;
 
+        // The pointer marks where a full-size ship's left edge goes; a shrunken
+        // ship aims for the same centre, so shrinking never shifts the steering
+        const targetX = this.input.pointerX + (WIDTH - this.player.width) / 2;
+
         // Frame-rate-independent lerp: same convergence per second at any refresh rate
         const followFactor = 1 - Math.pow(1 - MOUSE_FOLLOW_SPEED, deltaTime * 60);
-        this.player.x += (this.input.pointerX - this.player.x) * followFactor;
-        this.player.x = Math.max(0, Math.min(CANVAS_WIDTH - WIDTH, this.player.x));
+        this.player.x += (targetX - this.player.x) * followFactor;
+        this.player.x = Math.max(0, Math.min(CANVAS_WIDTH - this.player.width, this.player.x));
+    }
+
+    // Resizes the ship about its centre, keeping it on the bottom edge. The
+    // hitbox is the ship's own box, so this resizes both together.
+    setPlayerScale(scale) {
+        const { CANVAS_WIDTH, CANVAS_HEIGHT } = CONFIG;
+        const { WIDTH, HEIGHT } = CONFIG.PLAYER;
+
+        const centerX = this.player.x + this.player.width / 2;
+        this.player.width = WIDTH * scale;
+        this.player.height = HEIGHT * scale;
+        this.player.x = Math.max(0, Math.min(CANVAS_WIDTH - this.player.width, centerX - this.player.width / 2));
+        this.player.y = CANVAS_HEIGHT - this.player.height;
     }
 
     updateInvincibility(deltaTime) {
@@ -345,6 +367,17 @@ class SpaceDodger {
         }
     }
 
+    updateShrink(deltaTime) {
+        if (this.shrinkActive) {
+            this.shrinkTimer -= deltaTime;
+            if (this.shrinkTimer <= 0) {
+                this.shrinkActive = false;
+                this.shrinkTimer = 0;
+                this.setPlayerScale(1);
+            }
+        }
+    }
+
     triggerScreenShake() {
         const { SCREEN_SHAKE_INTENSITY, SCREEN_SHAKE_DURATION } = CONFIG.VISUAL;
         this.screenShake.intensity = SCREEN_SHAKE_INTENSITY;
@@ -373,18 +406,47 @@ class SpaceDodger {
 
     spawnObstacle() {
         const { CANVAS_WIDTH } = CONFIG;
-        const { WIDTH, HEIGHT, COLOR, ASTEROID_CHANCE, SPEED_VARIANCE } = CONFIG.OBSTACLE;
+        const { WIDTH, HEIGHT, COLOR, ASTEROID_CHANCE, SPEED_VARIANCE, DRIFTER } = CONFIG.OBSTACLE;
 
-        this.obstacles.push({
-            x: Math.random() * (CANVAS_WIDTH - WIDTH),
+        const x = Math.random() * (CANVAS_WIDTH - WIDTH);
+        const obstacle = {
+            x,
             y: -HEIGHT,
+            prevX: x,
             prevY: -HEIGHT,
             width: WIDTH,
             height: HEIGHT,
             speed: this.obstacleSpeed + Math.random() * SPEED_VARIANCE,
             color: COLOR,
             type: Math.random() < ASTEROID_CHANCE ? 'asteroid' : 'obstacle'
-        });
+        };
+
+        // Same fall speed as any other obstacle, plus a sideways drift of
+        // random size and direction, so a drifter covers more ground overall
+        if (this.level >= DRIFTER.MIN_LEVEL && Math.random() < DRIFTER.CHANCE) {
+            const drift = DRIFTER.MIN_DRIFT + Math.random() * (DRIFTER.MAX_DRIFT - DRIFTER.MIN_DRIFT);
+            obstacle.type = 'drifter';
+            obstacle.vx = Math.random() < 0.5 ? -drift : drift;
+        }
+
+        this.obstacles.push(obstacle);
+    }
+
+    // Moves a drifter sideways and reflects it off either edge, keeping the
+    // distance it would have travelled past the wall
+    driftObstacle(obstacle, distance) {
+        const maxX = CONFIG.CANVAS_WIDTH - obstacle.width;
+        obstacle.x += distance;
+
+        if (obstacle.x < 0) {
+            obstacle.x = -obstacle.x;
+            obstacle.vx = Math.abs(obstacle.vx);
+        } else if (obstacle.x > maxX) {
+            obstacle.x = 2 * maxX - obstacle.x;
+            obstacle.vx = -Math.abs(obstacle.vx);
+        }
+        // A drift larger than the whole canvas would still overshoot once
+        obstacle.x = Math.max(0, Math.min(maxX, obstacle.x));
     }
 
     updateObstacles(deltaTime) {
@@ -396,7 +458,13 @@ class SpaceDodger {
 
         for (let i = this.obstacles.length - 1; i >= 0; i--) {
             const obstacle = this.obstacles[i];
+            obstacle.prevX = obstacle.x;
             obstacle.prevY = obstacle.y;
+
+            // Slow-down eases the drift too; gravity only pulls downward
+            if (obstacle.vx) {
+                this.driftObstacle(obstacle, obstacle.vx * speedMultiplier * deltaTime * 60);
+            }
 
             if (obstacle.gravityAffected) {
                 obstacle.y += obstacle.speed * GRAVITY_SPEED_MULTIPLIER * speedMultiplier * deltaTime * 60;
@@ -429,7 +497,7 @@ class SpaceDodger {
         if (this.powerUps.length > 0) return;
 
         if (Math.random() < SPAWN_RATE * deltaTime * 60) {
-            const types = ['shield', 'slowDown'];
+            const types = ['shield', 'slowDown', 'shrink'];
             const type = types[Math.floor(Math.random() * types.length)];
 
             this.powerUps.push({
@@ -473,6 +541,7 @@ class SpaceDodger {
     collectPowerUp(type) {
         const { DURATION: SLOW_DOWN_DURATION } = CONFIG.POWER_UPS.SLOW_DOWN;
         const { DURATION: SHIELD_DURATION } = CONFIG.POWER_UPS.SHIELD;
+        const { DURATION: SHRINK_DURATION, SCALE: SHRINK_SCALE } = CONFIG.POWER_UPS.SHRINK;
 
         this.powerUpsCollectedThisGame++;
 
@@ -482,6 +551,11 @@ class SpaceDodger {
         } else if (type === 'slowDown') {
             this.slowDownActive = true;
             this.slowDownTimer = SLOW_DOWN_DURATION;
+        } else if (type === 'shrink') {
+            // A second pickup while shrunk only restarts the timer
+            this.shrinkActive = true;
+            this.shrinkTimer = SHRINK_DURATION;
+            this.setPlayerScale(SHRINK_SCALE);
         }
 
         this.achievementManager.checkAchievements();
@@ -737,6 +811,9 @@ class SpaceDodger {
         this.shieldTimer = 0;
         this.slowDownActive = false;
         this.slowDownTimer = 0;
+        this.shrinkActive = false;
+        this.shrinkTimer = 0;
+        this.setPlayerScale(1);
         this.resetScreenShake();
         this.levelFlashTimer = 0;
     }

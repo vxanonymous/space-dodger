@@ -11,7 +11,8 @@ An arcade-style dodging game with progressive difficulty
 - **Touch** – On mobile, drag on the game area to steer.
 - **P or the ⏸ button** – Pause/resume. To prevent abuse, you can only pause once per game.
 - **Avoid Obstacles** – Dodge falling objects, boss attacks, and special hazards.
-- **Collect Power-Ups** – Shield (absorbs 1 hit in 10 seconds) and Slow-Down (reduces falling speed by 20% in 10 seconds).
+- **Drifters** – From level 13 (after the third boss), hexagonal drifters join the falling obstacles. They fall at the usual speed but also slide sideways and bounce off the edges.
+- **Collect Power-Ups** – Shield (absorbs 1 hit in 10 seconds), Slow-Down (reduces falling speed by 20% in 10 seconds) and Shrink (halves your ship and its hitbox for 10 seconds).
 - **Boss Levels** – Every 4 levels a boss attack pattern starts.
 - **Score** – Earn points over time, and the game speeds up over time.
 

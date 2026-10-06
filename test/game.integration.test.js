@@ -195,6 +195,231 @@ describe('collisions', () => {
     });
 });
 
+// Runs fn with Math.random returning a fixed value
+function withRandom(value, fn) {
+    const real = Math.random;
+    Math.random = () => value;
+    try {
+        return fn();
+    } finally {
+        Math.random = real;
+    }
+}
+
+function drifter(overrides = {}) {
+    return {
+        x: 400, prevX: 400, y: 100, prevY: 100,
+        width: 30, height: 30, speed: 5, color: '#ff0000',
+        type: 'drifter', vx: 3,
+        ...overrides
+    };
+}
+
+describe('drifters', () => {
+    test('never spawn before the third boss is behind the player', () => {
+        game.startGame();
+        game.level = 12;
+        withRandom(0.1, () => {
+            for (let i = 0; i < 20; i++) game.spawnObstacle();
+        });
+        assert.ok(game.obstacles.every(o => o.type !== 'drifter'));
+    });
+
+    test('join the mix from level 13', () => {
+        game.startGame();
+        game.level = 13;
+        withRandom(0.1, () => game.spawnObstacle());
+
+        const [spawned] = game.obstacles;
+        assert.equal(spawned.type, 'drifter');
+        assert.ok(Math.abs(spawned.vx) >= 1.5 && Math.abs(spawned.vx) <= 4, `drift ${spawned.vx}`);
+    });
+
+    test('only take a share of spawns, not all of them', () => {
+        game.startGame();
+        game.level = 13;
+        withRandom(0.5, () => game.spawnObstacle());
+        assert.notEqual(game.obstacles[0].type, 'drifter');
+    });
+
+    test('fall at the same speed as a straight obstacle while moving sideways', () => {
+        withoutSpawns(() => {
+            game.startGame();
+            step(16, 2);
+            const straight = { ...drifter(), type: 'obstacle', vx: undefined };
+            const drifting = drifter();
+            game.obstacles = [straight, drifting];
+            game.update(1 / 60);
+        });
+        const [straight, drifting] = game.obstacles;
+        assert.equal(drifting.y, straight.y, 'fall speed differs');
+        assert.equal(straight.x, 400, 'a straight obstacle should not drift');
+        assert.ok(Math.abs(drifting.x - 403) < 1e-9, `expected x 403, got ${drifting.x}`);
+    });
+
+    test('bounce off the right edge', () => {
+        game.startGame();
+        const d = drifter({ x: 768, vx: 4 }); // max x is 770
+        game.driftObstacle(d, 4);
+        assert.equal(d.x, 768, 'reflects the 2px overshoot back inside');
+        assert.ok(d.vx < 0, 'should now head left');
+    });
+
+    test('bounce off the left edge', () => {
+        game.startGame();
+        const d = drifter({ x: 1, vx: -3 });
+        game.driftObstacle(d, -3);
+        assert.equal(d.x, 2);
+        assert.ok(d.vx > 0, 'should now head right');
+    });
+
+    test('stay on the canvas over a long flight', () => {
+        game.startGame();
+        const d = drifter({ x: 10, vx: -4 });
+        for (let i = 0; i < 1000; i++) {
+            game.driftObstacle(d, d.vx);
+            assert.ok(d.x >= 0 && d.x <= 770, `left the canvas at ${d.x}`);
+        }
+    });
+
+    test('slow-down eases the sideways drift too', () => {
+        withoutSpawns(() => {
+            game.startGame();
+            step(16, 2);
+            game.slowDownActive = true;
+            game.slowDownTimer = 5;
+            game.obstacles = [drifter({ vx: 5 })];
+            game.update(1 / 60);
+        });
+        assert.ok(Math.abs(game.obstacles[0].x - 404) < 1e-9, `got ${game.obstacles[0].x}`);
+    });
+
+    test('a drifter sliding into the ship costs a life', () => {
+        game.startGame();
+        step(16, 3);
+        const { x, y } = game.player;
+        // Passes from left of the ship to right of it in one frame
+        game.obstacles = [drifter({ prevX: x - 40, x: x + 30, prevY: y - 5, y: y - 5 })];
+        game.checkCollisions();
+        assert.equal(game.lives, 2);
+    });
+
+    test('are drawn as hexagons', () => {
+        game.startGame();
+        game.obstacles = [drifter()];
+        ctx.calls.length = 0;
+        game.renderer.drawObstacles();
+        const lines = ctx.calls.filter(c => c.name === 'lineTo').length;
+        assert.equal(lines, 5, 'a hexagon is one moveTo and five lineTo');
+    });
+});
+
+describe('shrink power-up', () => {
+    test('halves the ship about its centre and keeps it on the floor', () => {
+        game.startGame();
+        game.player.x = 400;
+        game.collectPowerUp('shrink');
+
+        assert.equal(game.player.width, 10);
+        assert.equal(game.player.height, 10);
+        assert.equal(game.player.x, 405, 'centre should stay at 410');
+        assert.equal(game.player.y, 690, 'bottom should stay on the canvas edge');
+        assert.equal(game.shrinkActive, true);
+        assert.equal(game.shrinkTimer, 10);
+    });
+
+    test('shrinks the hitbox, so a near miss becomes a miss', () => {
+        game.startGame();
+        step(16, 3);
+        game.player.x = 400;
+        game.collectPowerUp('shrink');
+        // Overlaps the full-size ship's left edge but not the shrunken one
+        game.obstacles = [{ ...overlapObstacle(), x: 372, y: 685, prevY: 685 }];
+        game.checkCollisions();
+        assert.equal(game.lives, 3);
+    });
+
+    test('wears off after ten seconds and restores the full ship', () => {
+        withoutSpawns(() => {
+            game.startGame();
+            step(16, 2);
+            game.input.pointerX = game.player.x;
+            game.collectPowerUp('shrink');
+            step(16, 300); // 4.8s
+            assert.equal(game.player.width, 10, 'should still be shrunk');
+            step(16, 340); // past 10s
+        });
+        assert.equal(game.shrinkActive, false);
+        assert.equal(game.player.width, 20);
+        assert.equal(game.player.height, 20);
+        assert.equal(game.player.y, 680);
+    });
+
+    test('a second pickup restarts the timer instead of shrinking further', () => {
+        game.startGame();
+        game.collectPowerUp('shrink');
+        game.shrinkTimer = 2;
+        game.collectPowerUp('shrink');
+        assert.equal(game.shrinkTimer, 10);
+        assert.equal(game.player.width, 10);
+    });
+
+    test('steering aims the shrunken ship at the same centre', () => {
+        withoutSpawns(() => {
+            game.startGame();
+            game.input.pointerX = 300;
+            game.collectPowerUp('shrink');
+            step(16, 120);
+        });
+        const centre = game.player.x + game.player.width / 2;
+        assert.ok(Math.abs(centre - 310) < 0.01, `centre at ${centre}`);
+    });
+
+    test('the shrunken ship can reach the right edge', () => {
+        withoutSpawns(() => {
+            game.startGame();
+            game.collectPowerUp('shrink');
+            game.input.pointerX = 2000;
+            step(16, 120);
+        });
+        assert.equal(game.player.x, 790);
+    });
+
+    test('a new run starts at full size', () => {
+        game.startGame();
+        game.collectPowerUp('shrink');
+        game.startGame();
+        assert.equal(game.shrinkActive, false);
+        assert.equal(game.player.width, 20);
+        assert.equal(game.player.y, 680);
+    });
+
+    test('spawns as one of the falling power-ups', () => {
+        game.startGame();
+        const types = new Set();
+        // The first draw decides whether anything spawns, the next picks the type
+        for (const r of [0.1, 0.4, 0.9]) {
+            const real = Math.random;
+            let call = 0;
+            Math.random = () => (call++ === 0 ? 0 : r);
+            try {
+                game.spawnPowerUps(1 / 60);
+            } finally {
+                Math.random = real;
+            }
+            types.add(game.powerUps[0].type);
+            game.powerUps = [];
+        }
+        assert.deepEqual([...types].sort(), ['shield', 'shrink', 'slowDown']);
+    });
+
+    test('counts toward the collector achievement', () => {
+        game.startGame();
+        game.collectPowerUp('shrink');
+        assert.equal(game.powerUpsCollectedThisGame, 1);
+    });
+});
+
 describe('pause', () => {
     test('pausing freezes game time and shows the overlay', () => {
         game.startGame();
@@ -259,6 +484,17 @@ describe('the HUD', () => {
         assert.match(status.textContent, /Slow Down \(4s\)/);
         assert.ok(status.querySelector('.pu-shield'));
         assert.ok(status.querySelector('.pu-slow'));
+    });
+
+    test('shows an active shrink', () => {
+        game.startGame();
+        game.shrinkActive = true;
+        game.shrinkTimer = 6;
+        game.refreshHUD();
+
+        const status = document.getElementById('powerUpStatus');
+        assert.match(status.textContent, /Shrink \(6s\)/);
+        assert.ok(status.querySelector('.pu-shrink'));
     });
 
     test('clears the power-up row once effects lapse', () => {

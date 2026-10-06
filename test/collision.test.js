@@ -57,6 +57,25 @@ describe('sweptBounds', () => {
 
         assert.equal(intersects(player, sweptBounds(obstacle)), true, 'swept box catches it');
     });
+
+    test('spans the sideways path of a drifter', () => {
+        const swept = sweptBounds({ x: 100, prevX: 90, y: 50, prevY: 50, width: 30, height: 30 });
+        assert.deepEqual(swept, { x: 90, y: 50, width: 40, height: 30 });
+    });
+
+    test('spans a drifter moving left as well as right', () => {
+        const swept = sweptBounds({ x: 90, prevX: 100, y: 50, prevY: 50, width: 30, height: 30 });
+        assert.deepEqual(swept, { x: 90, y: 50, width: 40, height: 30 });
+    });
+
+    test('catches a drifter that slides across the ship within one frame', () => {
+        const player = { x: 100, y: 680, width: 10, height: 10 };
+        const obstacle = { x: 115, prevX: 70, y: 670, prevY: 670, width: 30, height: 30 };
+
+        assert.equal(intersects(player, { x: 70, y: 670, width: 30, height: 30 }), false);
+        assert.equal(intersects(player, { x: 115, y: 670, width: 30, height: 30 }), false);
+        assert.equal(intersects(player, sweptBounds(obstacle)), true, 'swept box catches it');
+    });
 });
 
 describe('circleContainsPoint', () => {

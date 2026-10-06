@@ -29,7 +29,15 @@ export const CONFIG = {
         HEIGHT: 30,
         COLOR: '#ff0000',
         ASTEROID_CHANCE: 0.7,
-        SPEED_VARIANCE: 2
+        SPEED_VARIANCE: 2,
+        // Drifters fall at the normal speed but also move sideways, bouncing
+        // off the edges. They join the mix after the third boss (level 12).
+        DRIFTER: {
+            MIN_LEVEL: 13,
+            CHANCE: 0.3, // share of spawns once unlocked
+            MIN_DRIFT: 1.5, // horizontal px per 1/60s frame, either direction
+            MAX_DRIFT: 4
+        }
     },
 
     // Game settings
@@ -141,6 +149,11 @@ export const CONFIG = {
             COLOR: '#ffff00',
             DURATION: 10,
             SPEED_REDUCTION: 0.20 // 20% reduction
+        },
+        SHRINK: {
+            COLOR: '#32cd32',
+            DURATION: 10,
+            SCALE: 0.5 // ship width and height, so the hitbox shrinks with it
         }
     }
 };

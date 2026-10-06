@@ -75,7 +75,8 @@ export class Renderer {
     }
 
     drawPowerUps() {
-        const { SHIELD, SLOW_DOWN } = CONFIG.POWER_UPS;
+        const { SHIELD, SLOW_DOWN, SHRINK } = CONFIG.POWER_UPS;
+        const colors = { shield: SHIELD.COLOR, slowDown: SLOW_DOWN.COLOR, shrink: SHRINK.COLOR };
 
         for (const powerUp of this.game.powerUps) {
             this.game.ctx.save();
@@ -86,7 +87,7 @@ export class Renderer {
             this.game.ctx.translate(centerX, centerY);
             this.game.ctx.rotate(powerUp.rotation);
 
-            const color = powerUp.type === 'shield' ? SHIELD.COLOR : SLOW_DOWN.COLOR;
+            const color = colors[powerUp.type];
 
             // Draw diamond shape
             this.game.ctx.fillStyle = color;
@@ -123,7 +124,9 @@ export class Renderer {
     drawObstacles() {
         for (const obstacle of this.game.obstacles) {
             this.game.ctx.fillStyle = obstacle.color;
-            if (obstacle.type === 'asteroid') {
+            if (obstacle.type === 'drifter') {
+                this.drawDrifter(obstacle);
+            } else if (obstacle.type === 'asteroid') {
                 this.game.ctx.beginPath();
                 this.game.ctx.arc(obstacle.x + obstacle.width / 2, obstacle.y + obstacle.height / 2, obstacle.width / 2, 0, Math.PI * 2);
                 this.game.ctx.fill();
@@ -131,6 +134,26 @@ export class Renderer {
                 this.game.ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
             }
         }
+    }
+
+    // A hexagon, so a drifter reads as different from the round asteroids and
+    // square blocks before it has moved far enough to give itself away
+    drawDrifter(obstacle) {
+        const ctx = this.game.ctx;
+        const cx = obstacle.x + obstacle.width / 2;
+        const cy = obstacle.y + obstacle.height / 2;
+        const r = obstacle.width / 2;
+
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+            const angle = Math.PI / 3 * i;
+            const px = cx + r * Math.cos(angle);
+            const py = cy + r * Math.sin(angle);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
     }
 
     drawBoss() {
