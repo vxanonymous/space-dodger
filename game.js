@@ -910,7 +910,46 @@ class SpaceDodger {
 
         this.achievementManager.checkAchievements();
         this.achievementManager.updateAchievementsDisplay();
-        await this.loadLeaderboard();
+        // Independent requests; no reason for one to wait on the other
+        await Promise.all([this.loadLeaderboard(), this.loadPersonalBest()]);
+    }
+
+    // The visible board stops at the top 100, so this is the only place a player
+    // outside it can see where they actually stand
+    async loadPersonalBest() {
+        const container = document.getElementById('personalBest');
+        if (!container) return;
+
+        const playerName = StorageManager.loadPlayerName();
+        if (!playerName) {
+            container.classList.add('hidden');
+            return;
+        }
+
+        const result = await leaderboardAPI.getPlayerBest(playerName);
+        if (!result.success || !result.score) {
+            container.classList.add('hidden');
+            return;
+        }
+
+        const heading = document.createElement('h3');
+        heading.textContent = `Your Best as ${playerName}`;
+
+        const detail = document.createElement('p');
+        detail.textContent = `${Number(result.score.score).toLocaleString()} pts ` +
+            `(Level ${result.score.level}) on ` +
+            `${new Date(result.score.timestamp).toLocaleDateString()}`;
+
+        container.replaceChildren(heading, detail);
+
+        if (typeof result.rank === 'number') {
+            const rankLine = document.createElement('p');
+            rankLine.className = 'personal-best-rank';
+            rankLine.textContent = `Global Rank: #${result.rank.toLocaleString()}`;
+            container.appendChild(rankLine);
+        }
+
+        container.classList.remove('hidden');
     }
 
     async submitScoreToLeaderboard(playerName) {

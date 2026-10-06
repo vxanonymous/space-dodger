@@ -77,6 +77,25 @@ class LeaderboardAPI {
             return { success: false, leaderboard: [], error: error.message };
         }
     }
+
+    // A player's own best run and where it sits globally, including ranks past
+    // the visible top 100
+    async getPlayerBest(playerName) {
+        try {
+            const response = await fetch(
+                `${this.baseURL}/api/player/${encodeURIComponent(playerName)}`,
+                { signal: this.requestTimeout() }
+            );
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch player best');
+            }
+
+            return await response.json();
+        } catch (error) {
+            return { success: false, score: null, error: error.message };
+        }
+    }
 }
 
 export const leaderboardAPI = new LeaderboardAPI();

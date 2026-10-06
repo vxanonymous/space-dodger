@@ -63,12 +63,34 @@ const scoreSchema = new mongoose.Schema({
 
 // One compound index serves the leaderboard sort and the rank counts
 scoreSchema.index({ score: -1, timestamp: 1 });
+// Serves the per-player best lookup, which would otherwise scan the collection
+scoreSchema.index({ playerName: 1, score: -1, timestamp: 1 });
 
 const Score = mongoose.model('Score', scoreSchema);
 
 const MAX_LEADERBOARD_LIMIT = 100;
 const MAX_REASONABLE_SCORE = 10000000;
 const MAX_REASONABLE_LEVEL = 10000;
+const MAX_NAME_LENGTH = 20;
+
+// Strip characters with HTML meaning; the frontend renders names as text, but
+// stored data must not depend on every client doing so. Lookups run the same
+// transform, or a name could be stored in a form no query could find again.
+const sanitizeName = (raw) =>
+    String(raw).replace(/[<>&"'`]/g, '').trim().substring(0, MAX_NAME_LENGTH);
+
+// One more than the number of scores that beat this one, ties broken by the
+// earlier timestamp so this matches the leaderboard's own ordering. Both
+// endpoints share it, so they can't report different ranks for one score.
+async function rankOf(score, timestamp) {
+    const better = await Score.countDocuments({
+        $or: [
+            { score: { $gt: score } },
+            { score, timestamp: { $lt: timestamp } }
+        ]
+    });
+    return better + 1;
+}
 
 // Proof-of-play: a token issued at game start bounds any later submission by
 // real elapsed time. The game scores exactly SCORE_PER_SECOND, so a claimed
@@ -242,9 +264,7 @@ app.post('/api/scores', writeLimiter, async (req, res) => {
             });
         }
 
-        // Strip characters with HTML meaning; the frontend renders names as text,
-        // but stored data must not depend on every client doing so
-        const safeName = playerName.replace(/[<>&"'`]/g, '').trim().substring(0, 20);
+        const safeName = sanitizeName(playerName);
         if (safeName.length === 0) {
             return res.status(400).json({
                 success: false,
@@ -271,16 +291,8 @@ app.post('/api/scores', writeLimiter, async (req, res) => {
 
         await newScore.save();
 
-        // Get player's rank from the stored (floored) value. Count scores that are either:
-        // 1. Higher score
-        // 2. Same score but with earlier timestamp
-        const betterScores = await Score.countDocuments({
-            $or: [
-                { score: { $gt: newScore.score } },
-                { score: newScore.score, timestamp: { $lt: newScore.timestamp } }
-            ]
-        });
-        const rank = betterScores + 1;
+        // Rank comes from the stored (floored) value, not the submitted one
+        const rank = await rankOf(newScore.score, newScore.timestamp);
 
         // Echo back only the public fields; the raw document would also carry
         // the internal _id and __v
@@ -306,9 +318,19 @@ app.post('/api/scores', writeLimiter, async (req, res) => {
 // Get player's best score
 app.get('/api/player/:playerName', readLimiter, async (req, res) => {
     try {
-        const playerName = req.params.playerName.trim();
+        // Match how the name was normalized on the way in
+        const playerName = sanitizeName(req.params.playerName);
+        if (playerName.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Player name contains no usable characters'
+            });
+        }
+
+        // Same tiebreak as the leaderboard, so a player with two identical best
+        // scores always resolves to the earlier one rather than an arbitrary row
         const bestScore = await Score.findOne({ playerName })
-            .sort({ score: -1 })
+            .sort({ score: -1, timestamp: 1 })
             .select('playerName score level timestamp -_id')
             .lean();
 
@@ -320,7 +342,7 @@ app.get('/api/player/:playerName', readLimiter, async (req, res) => {
             });
         }
 
-        const rank = await Score.countDocuments({ score: { $gt: bestScore.score } }) + 1;
+        const rank = await rankOf(bestScore.score, bestScore.timestamp);
 
         res.json({
             success: true,
