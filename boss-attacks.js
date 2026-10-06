@@ -1,5 +1,6 @@
 // Boss attack system
 import { CONFIG } from './config.js';
+import { intersects, circleContainsPoint, centerOf } from './collision.js';
 
 // Single source of truth for the attack roster; achievements derive from this list
 export const BOSS_ATTACK_PATTERNS = ['spikes', 'double_spikes', 'wall', 'moving_safe', 'giant_obstacle', 'double_obstacles', 'gravity'];
@@ -325,12 +326,10 @@ export class BossAttackManager {
             } else if (attack.type === 'wall_restriction') {
                 collision = player.x < attack.leftWall || player.x + player.width > attack.rightWall;
             } else if (attack.type === 'giant_obstacle') {
-                const dx = (player.x + player.width / 2) - attack.centerX;
-                const dy = (player.y + player.height / 2) - attack.centerY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                collision = distance < attack.radius;
+                const mid = centerOf(player);
+                collision = circleContainsPoint(attack.centerX, attack.centerY, attack.radius, mid.x, mid.y);
             } else {
-                collision = this.game.checkCollision(player, attack);
+                collision = intersects(player, attack);
             }
 
             if (collision) {

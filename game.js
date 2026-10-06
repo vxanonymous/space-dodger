@@ -1,14 +1,25 @@
-// Main game logic
+// Game loop and simulation.
+//
+// This file owns entity state and the rules that move it. Input wiring lives
+// in input.js, DOM writes in hud.js and leaderboard-ui.js, collision maths in
+// collision.js and lifetime stats in metrics.js, so what is left here is the
+// simulation itself.
+
 import { CONFIG } from './config.js';
 import { BossAttackManager } from './boss-attacks.js';
 import { leaderboardAPI } from './api.js';
 import { StorageManager } from './storage.js';
 import { AchievementManager } from './achievements.js';
 import { Renderer } from './rendering.js';
+import { InputManager } from './input.js';
+import { HUD } from './hud.js';
+import { LeaderboardUI } from './leaderboard-ui.js';
+import { MetricsTracker } from './metrics.js';
+import { intersects, sweptBounds, centerOf } from './collision.js';
 
 class SpaceDodger {
     constructor() {
-        const { CANVAS_WIDTH, CANVAS_HEIGHT } = CONFIG;
+        const { CANVAS_HEIGHT } = CONFIG;
         const { START_X, WIDTH, HEIGHT, COLOR } = CONFIG.PLAYER;
         const { INITIAL_LIVES } = CONFIG.GAME;
 
@@ -51,82 +62,58 @@ class SpaceDodger {
         this.bossAttackManager = new BossAttackManager(this);
         this.lastBossLevel = 0;
 
-        // Initialize managers
+        this.hud = new HUD();
+        this.leaderboardUI = new LeaderboardUI({
+            onSubmitName: (name) => this.saveNameAndSubmit(name)
+        });
+        this.input = new InputManager(this.canvas, {
+            onPauseToggle: () => this.togglePause(),
+            initialX: START_X
+        });
+        this.metricsTracker = new MetricsTracker();
         this.achievementManager = new AchievementManager(this);
         this.renderer = new Renderer(this);
 
-        // Visual effects
-        this.screenShake = {
-            intensity: 0,
-            duration: 0,
-            offsetX: 0,
-            offsetY: 0
-        };
+        this.screenShake = { intensity: 0, duration: 0, offsetX: 0, offsetY: 0 };
         this.levelFlashTimer = 0;
 
-        this.mouseX = START_X;
         this.submissionSeq = 0;
         this.scoreSubmitted = false;
 
         this.score = 0;
         this.lastDisplayedScore = -1;
-        this.lastPowerUpStatusHTML = '';
         this.lives = INITIAL_LIVES;
         this.level = 1;
         this.gameTime = 0;
         this.highScore = StorageManager.loadHighScore();
         this.gameOverCalled = false;
 
-        this.metrics = StorageManager.loadMetrics();
         this.achievements = StorageManager.loadAchievements();
 
-        // Game state tracking for achievements
+        // Per-run tracking the achievement rules read
         this.powerUpsCollectedThisGame = 0;
-        this.bossAttackTypesDefeated = new Set(); // Track boss attack types defeated
+        this.bossAttackTypesDefeated = new Set();
         this.shieldSavedLife = false;
-        this.totalScoreEarned = this.metrics.totalScoreEarned || 0;
-        this.lifeLostDuringBossLevel = false; // Track if life was lost during current boss level
+        this.lifeLostDuringBossLevel = false;
         this.livesLostInFirstLevel = 0;
 
-        this.setupEventListeners();
         this.createStars();
-        this.updateAllHighScoreDisplays();
+        this.hud.setHighScore(this.highScore);
         this.updateMenuMetrics();
     }
 
-    setupEventListeners() {
-        // The canvas can be CSS-scaled down on small screens; map back to canvas coordinates
-        const updatePointer = (clientX) => {
-            const rect = this.canvas.getBoundingClientRect();
-            this.mouseX = (clientX - rect.left) * (this.canvas.width / rect.width);
-        };
+    // achievements.js reads these off the game object; keeping them as getters
+    // means the metrics move into their own module without changing that contract
+    get metrics() {
+        return this.metricsTracker.data;
+    }
 
-        this.canvas.addEventListener('mousemove', (e) => updatePointer(e.clientX));
+    get totalScoreEarned() {
+        return this.metricsTracker.data.totalScoreEarned || 0;
+    }
 
-        const onTouch = (e) => {
-            if (e.touches.length > 0) {
-                updatePointer(e.touches[0].clientX);
-                e.preventDefault(); // steering must not scroll the page
-            }
-        };
-        this.canvas.addEventListener('touchstart', onTouch, { passive: false });
-        this.canvas.addEventListener('touchmove', onTouch, { passive: false });
-
-        document.addEventListener('keydown', (e) => {
-            if (e.repeat || (e.key !== 'p' && e.key !== 'P')) return;
-            this.togglePause();
-        });
-
-        document.getElementById('pauseBtn').addEventListener('click', (e) => {
-            e.currentTarget.blur(); // keep Enter/Space from re-triggering the button
-            this.togglePause();
-        });
-        document.getElementById('resumeBtn').addEventListener('click', () => this.togglePause());
-
-        document.getElementById('nameSubmitBtn').addEventListener('click', () => this.saveNameAndSubmit());
-        document.getElementById('playerNameInput').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') this.saveNameAndSubmit();
-        });
+    get mouseX() {
+        return this.input.pointerX;
     }
 
     togglePause() {
@@ -135,43 +122,24 @@ class SpaceDodger {
         if (this.paused) {
             this.paused = false;
             this.pausedElapsedMs += Date.now() - this.pauseStartMs;
-            document.getElementById('pauseOverlay').classList.add('hidden');
+            this.hud.setPaused(false);
             return;
         }
 
         if (this.pauseUsedThisGame) {
-            this.showToast('⏸️ Pause already used this game');
+            this.hud.toast('⏸️ Pause already used this game');
             return;
         }
 
         this.paused = true;
         this.pauseUsedThisGame = true;
         this.pauseStartMs = Date.now();
-        document.getElementById('pauseOverlay').classList.remove('hidden');
-        document.getElementById('pauseBtn').classList.add('used');
+        this.hud.setPaused(true);
+        this.hud.setPauseUsed(true);
     }
 
     showToast(message) {
-        const notice = document.createElement('div');
-        notice.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #333;
-            color: #fff;
-            padding: 15px 25px;
-            border-radius: 5px;
-            font-weight: bold;
-            z-index: 10000;
-            animation: slideIn 0.3s ease-out;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        `;
-        notice.textContent = message;
-        document.body.appendChild(notice);
-        setTimeout(() => {
-            notice.style.animation = 'slideOut 0.3s ease-out';
-            setTimeout(() => notice.remove(), 300);
-        }, 2000);
+        this.hud.toast(message);
     }
 
     createStars() {
@@ -193,8 +161,8 @@ class SpaceDodger {
         this.resetGame();
         // Fresh proof-of-play session per game; resolves long before game over
         this.sessionTokenPromise = leaderboardAPI.startSession();
-        document.getElementById('mainMenu').classList.add('hidden');
-        document.getElementById('gameOver').classList.add('hidden');
+        this.hud.showMenu(false);
+        this.hud.hideGameOver();
 
         if (!this.gameLoopRunning) {
             this.gameLoopRunning = true;
@@ -227,18 +195,33 @@ class SpaceDodger {
         this.paused = false;
         this.pauseUsedThisGame = false;
         this.pausedElapsedMs = 0;
-        document.getElementById('pauseOverlay').classList.add('hidden');
-        document.getElementById('pauseBtn').classList.remove('used');
+        this.hud.setPaused(false);
+        this.hud.setPauseUsed(false);
 
-        // Reset achievement tracking for this game
         this.powerUpsCollectedThisGame = 0;
         this.bossAttackTypesDefeated = new Set();
         this.shieldSavedLife = false;
         this.lifeLostDuringBossLevel = false;
         this.livesLostInFirstLevel = 0;
 
-        this.updateHUD();
-        this.metrics.currentGameStartTime = Date.now();
+        this.refreshHUD();
+        this.hud.setHighScore(this.highScore);
+        this.metricsTracker.startRun();
+    }
+
+    refreshHUD() {
+        this.hud.renderStats({
+            score: this.score,
+            lives: this.lives,
+            level: this.level,
+            bossActive: Boolean(this.boss)
+        });
+        this.hud.renderPowerUps({
+            hasShield: this.player.hasShield,
+            shieldTimer: this.shieldTimer,
+            slowDownActive: this.slowDownActive,
+            slowDownTimer: this.slowDownTimer
+        });
     }
 
     update(deltaTime) {
@@ -284,7 +267,7 @@ class SpaceDodger {
         // achievement scans on the frames in between
         if (this.score !== this.lastDisplayedScore) {
             this.lastDisplayedScore = this.score;
-            this.updateHUD();
+            this.refreshHUD();
             this.achievementManager.checkAchievements();
         }
     }
@@ -295,7 +278,7 @@ class SpaceDodger {
 
         // Frame-rate-independent lerp: same convergence per second at any refresh rate
         const followFactor = 1 - Math.pow(1 - MOUSE_FOLLOW_SPEED, deltaTime * 60);
-        this.player.x += (this.mouseX - this.player.x) * followFactor;
+        this.player.x += (this.input.pointerX - this.player.x) * followFactor;
         this.player.x = Math.max(0, Math.min(CANVAS_WIDTH - WIDTH, this.player.x));
     }
 
@@ -314,7 +297,6 @@ class SpaceDodger {
             this.screenShake.duration -= deltaTime;
 
             if (this.screenShake.duration > 0) {
-                // Random shake offset
                 this.screenShake.offsetX = (Math.random() - 0.5) * 2 * this.screenShake.intensity;
                 this.screenShake.offsetY = (Math.random() - 0.5) * 2 * this.screenShake.intensity;
             } else {
@@ -403,11 +385,7 @@ class SpaceDodger {
         const { GRAVITY_SPEED_MULTIPLIER } = CONFIG.BOSS_ATTACKS;
         const { SPEED_REDUCTION } = CONFIG.POWER_UPS.SLOW_DOWN;
 
-        // Calculate speed multiplier for slow-down effect
-        let speedMultiplier = 1.0;
-        if (this.slowDownActive) {
-            speedMultiplier = 1.0 - SPEED_REDUCTION;
-        }
+        const speedMultiplier = this.slowDownActive ? 1.0 - SPEED_REDUCTION : 1.0;
 
         for (let i = this.obstacles.length - 1; i >= 0; i--) {
             const obstacle = this.obstacles[i];
@@ -439,10 +417,8 @@ class SpaceDodger {
         const { CANVAS_WIDTH } = CONFIG;
         const { SPAWN_RATE, WIDTH, HEIGHT, FALL_SPEED } = CONFIG.POWER_UPS;
 
-        // Don't spawn power-ups during boss fights
+        // Not during boss fights, and only one on screen at a time
         if (this.boss) return;
-
-        // Only spawn if no power-up is currently on screen
         if (this.powerUps.length > 0) return;
 
         if (Math.random() < SPAWN_RATE * deltaTime * 60) {
@@ -480,7 +456,7 @@ class SpaceDodger {
         for (let i = this.powerUps.length - 1; i >= 0; i--) {
             const powerUp = this.powerUps[i];
 
-            if (this.checkCollision(this.player, powerUp)) {
+            if (intersects(this.player, powerUp)) {
                 this.collectPowerUp(powerUp.type);
                 this.powerUps.splice(i, 1);
             }
@@ -536,22 +512,13 @@ class SpaceDodger {
         for (let i = this.obstacles.length - 1; i >= 0; i--) {
             const obstacle = this.obstacles[i];
 
-            // Swept test: cover the whole path travelled this frame so fast
-            // obstacles (especially under the gravity attack) can't tunnel through
-            const sweptTop = Math.min(obstacle.prevY, obstacle.y);
-            const swept = {
-                x: obstacle.x,
-                y: sweptTop,
-                width: obstacle.width,
-                height: obstacle.y + obstacle.height - sweptTop
-            };
-
-            if (this.checkCollision(this.player, swept)) {
-                this.createExplosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2);
+            if (intersects(this.player, sweptBounds(obstacle))) {
+                const impact = centerOf(this.player);
+                this.createExplosion(impact.x, impact.y);
                 this.obstacles.splice(i, 1);
                 this.triggerScreenShake();
                 this.handleHit();
-                // The i-frames from this hit absorb any other overlap this frame —
+                // The i-frames from this hit absorb any other overlap this frame;
                 // one visual impact must never drain more than one hit
                 if (this.player.invincible || this.gameOverCalled) {
                     return;
@@ -560,7 +527,8 @@ class SpaceDodger {
         }
 
         if (this.bossAttackManager.checkPlayerCollision(this.player)) {
-            this.createExplosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2);
+            const impact = centerOf(this.player);
+            this.createExplosion(impact.x, impact.y);
             this.triggerScreenShake();
             this.handleHit();
         }
@@ -576,7 +544,6 @@ class SpaceDodger {
             this.shieldTimer = 0;
             this.player.invincible = true;
             this.player.invincibilityTimer = INVINCIBILITY_DURATION;
-            // Track if shield saved life at 1 life for achievement
             if (this.lives === 1) {
                 this.shieldSavedLife = true;
                 this.achievementManager.checkAchievements();
@@ -618,20 +585,9 @@ class SpaceDodger {
         }
     }
 
-    checkCollision(obj1, obj2) {
-        return obj1.x < obj2.x + obj2.width &&
-               obj1.x + obj1.width > obj2.x &&
-               obj1.y < obj2.y + obj2.height &&
-               obj1.y + obj1.height > obj2.y;
-    }
-
     checkBossLevel() {
         const { BOSS_LEVEL_INTERVAL } = CONFIG.GAME;
 
-        // Only create boss if:
-        // 1. It's a boss level (level % 4 === 0)
-        // 2. No boss currently exists
-        // 3. A boss haven't been spawned for this level
         if (this.level % BOSS_LEVEL_INTERVAL === 0 && !this.boss && this.lastBossLevel !== this.level) {
             this.createBoss();
             this.lastBossLevel = this.level;
@@ -660,14 +616,12 @@ class SpaceDodger {
         const { LEVEL_DURATION, ATTACK_WINDOW_END } = CONFIG.BOSS;
 
         if (this.gameTime - this.boss.levelStartTime >= LEVEL_DURATION) {
-            // Boss defeated, only track attack types if no life was lost
+            // Boss survived; only credit the attack types if no life was lost
             if (!this.lifeLostDuringBossLevel) {
-                const attackTypes = this.bossAttackManager.getAttackTypesUsed();
-                attackTypes.forEach(type => {
+                this.bossAttackManager.getAttackTypesUsed().forEach(type => {
                     this.bossAttackTypesDefeated.add(type);
                 });
             }
-            // Check achievements
             this.achievementManager.checkAchievements();
 
             this.boss = null;
@@ -709,44 +663,6 @@ class SpaceDodger {
         }
     }
 
-    updateHUD() {
-        document.getElementById('score').textContent = this.score;
-        document.getElementById('lives').textContent = this.lives;
-
-        if (this.boss) {
-            document.getElementById('level').textContent = `${this.level} - BOSS!`;
-        } else {
-            document.getElementById('level').textContent = this.level;
-        }
-
-        const highScoreElement = document.getElementById('highScore');
-        if (highScoreElement) {
-            highScoreElement.textContent = this.highScore.toLocaleString();
-        }
-
-        // Update power-up status
-        const powerUpStatus = document.getElementById('powerUpStatus');
-        if (powerUpStatus) {
-            const statuses = [];
-
-            if (this.player.hasShield) {
-                const timeLeft = Math.ceil(this.shieldTimer);
-                statuses.push(`<span style="color: #00ffff;">🛡️ Shield (${timeLeft}s)</span>`);
-            }
-
-            if (this.slowDownActive) {
-                const timeLeft = Math.ceil(this.slowDownTimer);
-                statuses.push(`<span style="color: #ffff00;">⏱️ Slow Down (${timeLeft}s)</span>`);
-            }
-
-            const html = statuses.join(' | ');
-            if (html !== this.lastPowerUpStatusHTML) {
-                this.lastPowerUpStatusHTML = html;
-                powerUpStatus.innerHTML = html;
-            }
-        }
-    }
-
     gameOver() {
         if (this.gameOverCalled) {
             return;
@@ -761,7 +677,6 @@ class SpaceDodger {
         this.score = Math.floor(this.gameTime * SCORE_PER_SECOND);
         this.updateGameMetrics();
 
-        // Check Perfect Run achievement
         if (this.score > 0 && this.score % 100 === 0) {
             this.achievementManager.unlockAchievement('perfect_run');
         }
@@ -772,50 +687,37 @@ class SpaceDodger {
             StorageManager.saveHighScore(this.highScore);
         }
 
-        document.getElementById('finalScore').textContent = this.score.toLocaleString();
-        document.getElementById('finalLevel').textContent = this.level;
-
-        const newHighScoreBanner = document.getElementById('newHighScore');
-        if (newHighScoreBanner) {
-            newHighScoreBanner.classList.toggle('hidden', !isNewHighScore);
-        }
-
-        this.updateAllHighScoreDisplays();
+        this.hud.setHighScore(this.highScore);
 
         // Show the death screen immediately; the leaderboard submit runs in the
         // background and must never gate the UI on a network round-trip
-        document.getElementById('gameOver').classList.remove('hidden');
+        this.hud.showGameOver({ score: this.score, level: this.level, isNewHighScore });
         this.prepareLeaderboardSubmission();
     }
 
     prepareLeaderboardSubmission() {
-        const rankLine = document.getElementById('finalRank');
-        const nameForm = document.getElementById('nameForm');
         const playerName = StorageManager.loadPlayerName();
 
         if (playerName) {
-            nameForm.classList.add('hidden');
-            rankLine.textContent = `Playing as ${playerName} — submitting score…`;
+            this.leaderboardUI.showNameForm(false);
+            this.leaderboardUI.setRankLine(`Playing as ${playerName} — submitting score…`);
             this.submitScoreToLeaderboard(playerName);
         } else {
             // First submission: ask for a name inline instead of a blocking prompt.
             // Skipping (restarting without submitting) just skips this game's entry.
-            rankLine.textContent = '';
-            nameForm.classList.remove('hidden');
+            this.leaderboardUI.setRankLine('');
+            this.leaderboardUI.showNameForm(true);
         }
     }
 
-    saveNameAndSubmit() {
-        const input = document.getElementById('playerNameInput');
-        const name = (input.value || '').trim().substring(0, 20) || 'Anonymous';
+    saveNameAndSubmit(name) {
         StorageManager.savePlayerName(name);
-        document.getElementById('nameForm').classList.add('hidden');
-        document.getElementById('finalRank').textContent = `Playing as ${name} — submitting score…`;
+        this.leaderboardUI.showNameForm(false);
+        this.leaderboardUI.setRankLine(`Playing as ${name} — submitting score…`);
         this.submitScoreToLeaderboard(name);
     }
 
     cleanup() {
-        // Clear all game objects
         this.obstacles = [];
         this.explosions = [];
         this.powerUps = [];
@@ -833,30 +735,16 @@ class SpaceDodger {
     }
 
     updateGameMetrics() {
-        // Time spent paused doesn't count as play time
-        const gameDuration = Date.now() - this.metrics.currentGameStartTime - this.pausedElapsedMs;
-        this.metrics.totalGamesPlayed++;
-        this.metrics.totalPlayTime += gameDuration;
-        this.metrics.averageScore = (this.metrics.averageScore * (this.metrics.totalGamesPlayed - 1) + this.score) / this.metrics.totalGamesPlayed;
-        this.metrics.averageLevel = (this.metrics.averageLevel * (this.metrics.totalGamesPlayed - 1) + this.level) / this.metrics.totalGamesPlayed;
-
-        // Update total score earned
-        this.totalScoreEarned += this.score;
-        this.metrics.totalScoreEarned = this.totalScoreEarned;
-
+        this.metricsTracker.completeRun({
+            score: this.score,
+            level: this.level,
+            pausedMs: this.pausedElapsedMs
+        });
         this.achievementManager.checkAchievements();
-
-        StorageManager.saveMetrics(this.metrics);
     }
 
     updateAllHighScoreDisplays() {
-        const elements = ['highScore', 'gameOverHighScore', 'prominentHighScore'];
-        elements.forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.textContent = this.highScore.toLocaleString();
-            }
-        });
+        this.hud.setHighScore(this.highScore);
     }
 
     resetCache() {
@@ -870,9 +758,8 @@ class SpaceDodger {
         StorageManager.resetCache();
 
         this.highScore = 0;
-        this.metrics = StorageManager.loadMetrics();
+        this.metricsTracker.reset();
         this.achievements = StorageManager.loadAchievements();
-        this.totalScoreEarned = 0;
 
         // Clear per-game trackers too, or the checkAchievements() call below would
         // instantly re-unlock achievements from the last game's state
@@ -887,26 +774,14 @@ class SpaceDodger {
         this.lifeLostDuringBossLevel = false;
         this.livesLostInFirstLevel = 0;
 
-        this.updateAllHighScoreDisplays();
+        this.hud.setHighScore(this.highScore);
         this.updateMenuMetrics();
 
         return true;
     }
 
     async updateMenuMetrics() {
-        const elements = {
-            'gamesPlayed': this.metrics.totalGamesPlayed,
-            'avgScore': Math.round(this.metrics.averageScore),
-            'avgLevel': Math.round(this.metrics.averageLevel),
-            'totalTime': Math.round(this.metrics.totalPlayTime / 60000)
-        };
-
-        Object.keys(elements).forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.textContent = elements[id];
-            }
-        });
+        this.hud.renderMenuStats(this.metricsTracker.data);
 
         this.achievementManager.checkAchievements();
         this.achievementManager.updateAchievementsDisplay();
@@ -917,39 +792,25 @@ class SpaceDodger {
     // The visible board stops at the top 100, so this is the only place a player
     // outside it can see where they actually stand
     async loadPersonalBest() {
-        const container = document.getElementById('personalBest');
-        if (!container) return;
-
         const playerName = StorageManager.loadPlayerName();
         if (!playerName) {
-            container.classList.add('hidden');
+            this.leaderboardUI.hidePersonalBest();
             return;
         }
 
         const result = await leaderboardAPI.getPlayerBest(playerName);
         if (!result.success || !result.score) {
-            container.classList.add('hidden');
+            this.leaderboardUI.hidePersonalBest();
             return;
         }
 
-        const heading = document.createElement('h3');
-        heading.textContent = `Your Best as ${playerName}`;
-
-        const detail = document.createElement('p');
-        detail.textContent = `${Number(result.score.score).toLocaleString()} pts ` +
-            `(Level ${result.score.level}) on ` +
-            `${new Date(result.score.timestamp).toLocaleDateString()}`;
-
-        container.replaceChildren(heading, detail);
-
-        if (typeof result.rank === 'number') {
-            const rankLine = document.createElement('p');
-            rankLine.className = 'personal-best-rank';
-            rankLine.textContent = `Global Rank: #${result.rank.toLocaleString()}`;
-            container.appendChild(rankLine);
-        }
-
-        container.classList.remove('hidden');
+        this.leaderboardUI.renderPersonalBest({
+            playerName,
+            score: result.score.score,
+            level: result.score.level,
+            timestamp: result.score.timestamp,
+            rank: result.rank
+        });
     }
 
     async submitScoreToLeaderboard(playerName) {
@@ -967,7 +828,6 @@ class SpaceDodger {
             const result = await leaderboardAPI.submitScore(playerName, this.score, this.level, sessionToken);
 
             if (result.success) {
-                // "Get a Result on Global Leaderboard" means placing on the visible board
                 if (result.rank && result.rank <= CONFIG.API.LEADERBOARD_LIMIT) {
                     this.achievementManager.unlockAchievement('leaderboard_ranked');
                 }
@@ -976,64 +836,27 @@ class SpaceDodger {
                 }
             }
 
-            const rankLine = document.getElementById('finalRank');
-            if (rankLine && seq === this.submissionSeq) {
-                rankLine.textContent = result.success && result.rank
-                    ? `Playing as ${playerName} — Global Rank: #${result.rank}`
-                    : `Playing as ${playerName} — leaderboard unavailable`;
+            if (seq === this.submissionSeq) {
+                this.leaderboardUI.setRankLine(
+                    result.success && result.rank
+                        ? `Playing as ${playerName} — Global Rank: #${result.rank}`
+                        : `Playing as ${playerName} — leaderboard unavailable`
+                );
             }
         } catch (error) {}
     }
 
     async loadLeaderboard() {
-        const leaderboardElement = document.getElementById('leaderboard');
-        if (!leaderboardElement) return;
-
         try {
             const result = await leaderboardAPI.getLeaderboard();
 
             if (result.success) {
-                if (result.leaderboard && result.leaderboard.length > 0) {
-                    leaderboardElement.innerHTML = '<h3>Global Leaderboard (Top 100)</h3>';
-                    const list = document.createElement('div');
-                    list.style.cssText = 'text-align: left; max-width: 500px; margin: 10px auto; padding-left: 30px; max-height: 400px; overflow-y: auto;';
-
-                    const ownName = StorageManager.loadPlayerName();
-                    result.leaderboard.forEach((entry, index) => {
-                        const item = document.createElement('div');
-                        const isOwn = ownName && entry.playerName === ownName;
-                        item.style.cssText = isOwn
-                            ? 'margin-bottom: 5px; color: #00ff00; font-weight: bold; border-left: 3px solid #00ff00; padding-left: 6px;'
-                            : 'margin-bottom: 5px;';
-
-                        // Server data is rendered as text nodes only — a stored player
-                        // name must never reach innerHTML
-                        const name = document.createElement('strong');
-                        name.textContent = entry.playerName;
-
-                        const date = document.createElement('span');
-                        date.style.cssText = 'color: #888; font-size: 0.9em;';
-                        date.textContent = new Date(entry.timestamp).toLocaleDateString();
-
-                        item.append(
-                            `${index + 1}. `,
-                            name,
-                            isOwn ? ' (you)' : '',
-                            ` - ${Number(entry.score).toLocaleString()} pts (Level ${entry.level}) `,
-                            date
-                        );
-                        list.appendChild(item);
-                    });
-
-                    leaderboardElement.appendChild(list);
-                } else {
-                    leaderboardElement.innerHTML = '<h3>Global Leaderboard</h3><p style="color: #888;">No scores yet. Be the first!</p>';
-                }
+                this.leaderboardUI.renderBoard(result.leaderboard, StorageManager.loadPlayerName());
             } else {
-                leaderboardElement.innerHTML = `<h3>Global Leaderboard</h3><p style="color: #888;">Leaderboard unavailable</p>`;
+                this.leaderboardUI.showBoardMessage('Global Leaderboard', 'Leaderboard unavailable');
             }
         } catch (error) {
-            leaderboardElement.innerHTML = `<h3>Global Leaderboard</h3><p style="color: #888;">Failed to load leaderboard</p>`;
+            this.leaderboardUI.showBoardMessage('Global Leaderboard', 'Failed to load leaderboard');
         }
     }
 
@@ -1050,14 +873,13 @@ class SpaceDodger {
 
         const now = currentTime ?? performance.now();
 
-        // Handle first frame
         if (this.lastFrameTime === 0) {
             this.lastFrameTime = now;
             this.scheduleFrame();
             return;
         }
 
-        const deltaTime = (now - this.lastFrameTime) / 1000; // Convert to seconds
+        const deltaTime = (now - this.lastFrameTime) / 1000;
         this.lastFrameTime = now;
 
         // While paused the world is frozen: gameTime stops, so score, boss timers,
@@ -1089,7 +911,9 @@ class SpaceDodger {
     }
 }
 
-// Export functions for menu.js
+export { SpaceDodger };
+
+// Exported for menu.js
 export let game;
 
 export function startGame() {
@@ -1104,23 +928,28 @@ export function restartGame() {
 
 export function returnToMenu() {
     if (!game) return;
-    document.getElementById('gameOver').classList.add('hidden');
-    document.getElementById('mainMenu').classList.remove('hidden');
+    game.hud.hideGameOver();
+    game.hud.showMenu(true);
     game.state = 'menu';
     game.gameLoopRunning = false;
     game.cleanup();
-    game.updateAllHighScoreDisplays();
+    game.hud.setHighScore(game.highScore);
     game.updateMenuMetrics();
 }
 
 export function resetCache() {
     if (!game) return;
     game.resetCache();
-    game.showToast('🧹 Local data cleared');
+    game.hud.toast('🧹 Local data cleared');
 }
 
-// Initialize game as soon as the DOM is ready — menu.js binds its click handlers
-// at the same event, and this module's listener registers first
-document.addEventListener('DOMContentLoaded', () => {
+export function createGame() {
     game = new SpaceDodger();
+    return game;
+}
+
+// Initialize as soon as the DOM is ready. menu.js binds its click handlers at
+// the same event, and this module's listener registers first.
+document.addEventListener('DOMContentLoaded', () => {
+    createGame();
 });

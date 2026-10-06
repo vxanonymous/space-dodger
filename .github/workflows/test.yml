@@ -1,0 +1,69 @@
+name: Tests
+
+# Runs on every push and pull request. The frontend deploy workflow publishes
+# straight to Surge on a push to main, and Render redeploys the backend on the
+# same push, so this is the only gate either one gets.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # The runner's own Node version is part of what is being tested: the
+      # test script has to stay on syntax every supported release accepts,
+      # and `node --test` has gained argument forms along the way that older
+      # ones reject.
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      # The backend has no tests of its own yet, but a syntax error here used
+      # to reach Render and only surface as a crash loop minutes later
+      - name: Check the backend parses
+        run: node --check backend/server.js
+
+      - name: Check the backend starts and serves /health
+        env:
+          PORT: 3999
+          MONGODB_URI: mongodb://127.0.0.1:27017/space-dodger-ci
+        run: |
+          cd backend && npm ci && cd ..
+          node backend/server.js &
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:$PORT/health" > /dev/null 2>&1; then
+              curl -s "http://127.0.0.1:$PORT/health"
+              echo
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "backend did not become healthy in 30s"
+          exit 1
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
