@@ -89,6 +89,10 @@ class SpaceDodger {
         this.gameOverCalled = false;
 
         this.achievements = StorageManager.loadAchievements();
+        // Stable across renames and distinct from anyone else who picks the
+        // same display name. Null when storage is unavailable, in which case
+        // the game plays normally and lookups fall back to the name.
+        this.playerId = StorageManager.ensurePlayerId();
 
         // Per-run tracking the achievement rules read
         this.powerUpsCollectedThisGame = 0;
@@ -99,6 +103,9 @@ class SpaceDodger {
 
         this.createStars();
         this.hud.setHighScore(this.highScore);
+        // Begin the API's restart before anything needs it, so the wait
+        // overlaps with the player reading the menu
+        leaderboardAPI.warmUp();
         this.updateMenuMetrics();
     }
 
@@ -760,6 +767,9 @@ class SpaceDodger {
         this.highScore = 0;
         this.metricsTracker.reset();
         this.achievements = StorageManager.loadAchievements();
+        // The old identity was just cleared; mint a fresh one so this browser
+        // still has one rather than silently falling back to name matching
+        this.playerId = StorageManager.ensurePlayerId();
 
         // Clear per-game trackers too, or the checkAchievements() call below would
         // instantly re-unlock achievements from the last game's state
@@ -785,32 +795,55 @@ class SpaceDodger {
 
         this.achievementManager.checkAchievements();
         this.achievementManager.updateAchievementsDisplay();
-        // Independent requests; no reason for one to wait on the other
-        await Promise.all([this.loadLeaderboard(), this.loadPersonalBest()]);
+        await this.refreshLeaderboardViews();
     }
 
-    // The visible board stops at the top 100, so this is the only place a player
-    // outside it can see where they actually stand
-    async loadPersonalBest() {
+    // Both requests go out together, but the board is rendered after the
+    // personal best resolves: knowing which run is yours is what lets the row
+    // be highlighted by identity instead of by a display name anyone can take.
+    async refreshLeaderboardViews() {
         const playerName = StorageManager.loadPlayerName();
-        if (!playerName) {
-            this.leaderboardUI.hidePersonalBest();
-            return;
+
+        // The host sleeps when idle and takes tens of seconds to come back, so
+        // say so rather than leaving the panel blank for the whole restart
+        if (!leaderboardAPI.warmed) {
+            this.leaderboardUI.showBoardMessage(
+                'Global Leaderboard',
+                'Waking the server up, this can take up to a minute…'
+            );
         }
 
-        const result = await leaderboardAPI.getPlayerBest(playerName);
-        if (!result.success || !result.score) {
+        const [board, best] = await Promise.all([
+            leaderboardAPI.getLeaderboard().catch(() => ({ success: false })),
+            this.fetchPersonalBest(playerName)
+        ]);
+
+        if (best) {
+            this.leaderboardUI.renderPersonalBest({
+                playerName: best.score.playerName || playerName,
+                score: best.score.score,
+                level: best.score.level,
+                timestamp: best.score.timestamp,
+                rank: best.rank
+            });
+        } else {
             this.leaderboardUI.hidePersonalBest();
-            return;
         }
 
-        this.leaderboardUI.renderPersonalBest({
-            playerName,
-            score: result.score.score,
-            level: result.score.level,
-            timestamp: result.score.timestamp,
-            rank: result.rank
-        });
+        if (board.success) {
+            this.leaderboardUI.renderBoard(board.leaderboard, best ? best.score : null);
+        } else {
+            this.leaderboardUI.showBoardMessage('Global Leaderboard', 'Leaderboard unavailable');
+        }
+    }
+
+    // The visible board stops at the top 100, so this is the only place a
+    // player outside it can see where they actually stand
+    async fetchPersonalBest(playerName) {
+        if (!this.playerId && !playerName) return null;
+
+        const result = await leaderboardAPI.getPlayerBest(this.playerId, playerName);
+        return result.success && result.score ? result : null;
     }
 
     async submitScoreToLeaderboard(playerName) {
@@ -825,7 +858,9 @@ class SpaceDodger {
         const seq = ++this.submissionSeq;
         try {
             const sessionToken = this.sessionTokenPromise ? await this.sessionTokenPromise : null;
-            const result = await leaderboardAPI.submitScore(playerName, this.score, this.level, sessionToken);
+            const result = await leaderboardAPI.submitScore(
+                playerName, this.score, this.level, sessionToken, this.playerId
+            );
 
             if (result.success) {
                 if (result.rank && result.rank <= CONFIG.API.LEADERBOARD_LIMIT) {
@@ -846,18 +881,10 @@ class SpaceDodger {
         } catch (error) {}
     }
 
+    // Kept as a thin alias: refreshLeaderboardViews needs the personal best to
+    // know which row is yours, so the two are fetched together
     async loadLeaderboard() {
-        try {
-            const result = await leaderboardAPI.getLeaderboard();
-
-            if (result.success) {
-                this.leaderboardUI.renderBoard(result.leaderboard, StorageManager.loadPlayerName());
-            } else {
-                this.leaderboardUI.showBoardMessage('Global Leaderboard', 'Leaderboard unavailable');
-            }
-        } catch (error) {
-            this.leaderboardUI.showBoardMessage('Global Leaderboard', 'Failed to load leaderboard');
-        }
+        await this.refreshLeaderboardViews();
     }
 
     scheduleFrame() {

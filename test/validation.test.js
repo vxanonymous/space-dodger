@@ -10,8 +10,25 @@ const {
     MAX_LEADERBOARD_LIMIT,
     sanitizeName,
     validateSubmission,
-    clampLimit
+    clampLimit,
+    isValidPlayerId
 } = require('../backend/lib/validation.js');
+
+describe('isValidPlayerId', () => {
+    test('accepts a generated UUID', () => {
+        assert.equal(isValidPlayerId('3f2504e0-4f89-41d3-9a0c-0305e82c3301'), true);
+    });
+
+    test('accepts the hex fallback the client uses without randomUUID', () => {
+        assert.equal(isValidPlayerId('a'.repeat(32)), true);
+    });
+
+    for (const bad of [null, undefined, 42, {}, '', 'short', 'x'.repeat(65), 'has space', 'has/slash', '<script>']) {
+        test(`rejects ${JSON.stringify(bad)}`, () => {
+            assert.equal(isValidPlayerId(bad), false);
+        });
+    }
+});
 
 describe('sanitizeName', () => {
     test('strips characters with HTML meaning', () => {

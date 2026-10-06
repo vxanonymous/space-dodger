@@ -110,6 +110,7 @@ export const CONFIG = {
         HIGH_SCORE: 'spaceDodgerHighScore',
         METRICS: 'spaceDodgerMetrics',
         PLAYER_NAME: 'spaceDodgerPlayerName',
+        PLAYER_ID: 'spaceDodgerPlayerId',
         ACHIEVEMENTS: 'spaceDodgerAchievements'
     },
 
@@ -117,7 +118,12 @@ export const CONFIG = {
     API: {
         BASE_URL: IS_LOCALHOST ? 'http://localhost:3000' : 'https://space-dodger-api.onrender.com',
         LEADERBOARD_LIMIT: 100,
-        TIMEOUT_MS: 8000
+        TIMEOUT_MS: 8000,
+        // The API host spins the service down when idle, and the first request
+        // after that pays for the restart. Measured at 22.6s against a 0.1s
+        // warm response, so an 8s budget made the first visitor after any lull
+        // see "unavailable" every time. Only the first request gets this.
+        COLD_TIMEOUT_MS: 45000
     },
 
     // Power-up settings

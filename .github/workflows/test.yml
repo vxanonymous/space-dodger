@@ -31,8 +31,26 @@ jobs:
       - name: Install test dependencies
         run: npm ci
 
+      # The route tests load the real app, so they need the backend's own
+      # dependencies present before the suite runs, not later
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
       - name: Run tests
         run: npm test
+        env:
+          TEST_MONGODB_URI: mongodb://127.0.0.1:27017/space-dodger-routes-test
+          REQUIRE_ROUTE_TESTS: '1'
+
+      # Thresholds are a floor, not a target: they exist so coverage cannot
+      # quietly fall out from under a change. The exclusion flags need Node 22.
+      - name: Coverage
+        if: matrix.node-version == 22
+        run: npm run test:coverage
+        env:
+          TEST_MONGODB_URI: mongodb://127.0.0.1:27017/space-dodger-routes-test
+          REQUIRE_ROUTE_TESTS: '1'
 
       # The backend has no tests of its own yet, but a syntax error here used
       # to reach Render and only surface as a crash loop minutes later

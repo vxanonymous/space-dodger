@@ -365,8 +365,8 @@ describe('offline behaviour', () => {
         assert.match(document.getElementById('leaderboard').textContent, /unavailable/i);
     });
 
-    test('the personal best block stays hidden with no saved name', async () => {
-        await game.loadPersonalBest();
+    test('the personal best block stays hidden when the lookup fails', async () => {
+        await game.refreshLeaderboardViews();
         assert.ok(document.getElementById('personalBest').classList.contains('hidden'));
     });
 
@@ -384,18 +384,111 @@ describe('offline behaviour', () => {
     });
 });
 
+describe('cold start', () => {
+    // Measured against the real host: 22.6s for the first request after it
+    // sleeps, 0.1s once awake. The old flat 8s budget meant the first visitor
+    // after any lull always saw "unavailable".
+    let api, CONFIG;
+
+    before(async () => {
+        ({ leaderboardAPI: api } = await import('../api.js'));
+        ({ CONFIG } = await import('../config.js'));
+    });
+
+    test('the cold budget comfortably exceeds a real restart', () => {
+        assert.ok(CONFIG.API.COLD_TIMEOUT_MS > 22646,
+            'the cold timeout must clear the 22.6s restart that was measured');
+    });
+
+    test('the warm budget stays short, so a real outage is reported quickly', () => {
+        assert.ok(CONFIG.API.TIMEOUT_MS <= 10000);
+        assert.ok(CONFIG.API.TIMEOUT_MS < CONFIG.API.COLD_TIMEOUT_MS);
+    });
+
+    test('an unwarmed client budgets for the restart', () => {
+        api.warmed = false;
+        assert.equal(api.requestTimeout().constructor.name, 'AbortSignal');
+    });
+
+    test('any reply marks the host awake, including an error status', async () => {
+        api.warmed = false;
+        const original = globalThis.fetch;
+        globalThis.fetch = () => Promise.resolve({
+            ok: false, status: 500, json: () => Promise.resolve({})
+        });
+        try {
+            await api.getLeaderboard();
+            assert.equal(api.warmed, true, 'a 500 still proves the host answered');
+        } finally {
+            globalThis.fetch = original;
+        }
+    });
+
+    test('a failed request leaves the client cold, so the next one still waits', async () => {
+        api.warmed = false;
+        await api.getLeaderboard(); // the suite's fetch rejects
+        assert.equal(api.warmed, false);
+    });
+
+    test('warmUp does not reject when the host is unreachable', async () => {
+        api.warmed = false;
+        assert.doesNotThrow(() => api.warmUp());
+        await new Promise(r => setTimeout(r, 10));
+    });
+
+    test('the menu says the server is waking rather than sitting blank', async () => {
+        api.warmed = false;
+        // Checked before awaiting: the notice has to be on screen for the
+        // whole restart, not swapped in after it finishes.
+        const inFlight = game.refreshLeaderboardViews();
+        assert.match(game.leaderboardUI.board.textContent, /Waking the server up/);
+        await inFlight;
+    });
+
+    test('a warm client skips the waking notice', async () => {
+        api.warmed = true;
+        const inFlight = game.refreshLeaderboardViews();
+        assert.doesNotMatch(game.leaderboardUI.board.textContent, /Waking the server up/);
+        await inFlight;
+    });
+});
+
 describe('leaderboard rendering', () => {
     test('renders rows and marks the player', () => {
         game.leaderboardUI.renderBoard([
             { playerName: 'Vinh', score: 1769, level: 18, timestamp: '2025-12-07T07:52:17.354Z' },
             { playerName: 'Other', score: 900, level: 9, timestamp: '2026-01-01T00:00:00.000Z' }
-        ], 'Vinh');
+        ], { score: 1769, timestamp: '2025-12-07T07:52:17.354Z' });
 
         const board = document.getElementById('leaderboard');
         assert.equal(board.querySelectorAll('.board-row').length, 2);
         assert.equal(board.querySelectorAll('.board-row-own').length, 1);
         assert.match(board.textContent, /1,769 pts \(Level 18\)/);
         assert.match(board.textContent, /\(you\)/);
+    });
+
+    test('a stranger sharing your display name is not marked as you', () => {
+        // The whole point of resolving identity server-side: two players can
+        // both be called Vinh, and only one of these rows is actually mine.
+        game.leaderboardUI.renderBoard([
+            { playerName: 'Vinh', score: 5000, level: 50, timestamp: '2026-02-01T00:00:00.000Z' },
+            { playerName: 'Vinh', score: 1769, level: 18, timestamp: '2025-12-07T07:52:17.354Z' }
+        ], { score: 1769, timestamp: '2025-12-07T07:52:17.354Z' });
+
+        const board = document.getElementById('leaderboard');
+        const own = board.querySelectorAll('.board-row-own');
+        assert.equal(own.length, 1, 'exactly one row should be mine');
+        assert.match(own[0].textContent, /1,769/, 'the marked row should be my run, not the higher one');
+        assert.doesNotMatch(own[0].textContent, /5,000/);
+    });
+
+    test('no row is marked when the player has no recorded best', () => {
+        game.leaderboardUI.renderBoard([
+            { playerName: 'Vinh', score: 1769, level: 18, timestamp: '2025-12-07T07:52:17.354Z' }
+        ], null);
+
+        assert.equal(document.getElementById('leaderboard').querySelectorAll('.board-row-own').length, 0);
+        assert.doesNotMatch(document.getElementById('leaderboard').textContent, /\(you\)/);
     });
 
     test('a player name is never interpreted as markup', () => {
@@ -424,6 +517,131 @@ describe('leaderboard rendering', () => {
         assert.match(el.textContent, /Your Best as Vinh/);
         assert.match(el.textContent, /1,769 pts \(Level 18\)/);
         assert.match(el.textContent, /Global Rank: #1/);
+    });
+});
+
+describe('achievements', () => {
+    // These rules decide what players earn and had no coverage at all. They
+    // need a DOM because the manager builds its popup on construction, which
+    // is why they live here rather than in a pure unit file.
+    let ACHIEVEMENTS, BOSS_ATTACK_PATTERNS;
+
+    before(async () => {
+        ({ ACHIEVEMENTS } = await import('../achievements.js'));
+        ({ BOSS_ATTACK_PATTERNS } = await import('../boss-attacks.js'));
+    });
+
+    test('every score milestone in the catalogue actually unlocks', () => {
+        // Guards a real drift hazard: the thresholds the checker loops over
+        // are written out separately from the catalogue, so adding an entry
+        // to one and not the other yields an achievement nobody can earn.
+        const milestones = ACHIEVEMENTS
+            .map(a => /^score_(\d+)$/.exec(a.id))
+            .filter(Boolean)
+            .map(m => Number(m[1]));
+
+        assert.ok(milestones.length >= 5, 'expected several score achievements');
+
+        for (const target of milestones) {
+            const fresh = gameModule.createGame();
+            fresh.score = target;
+            fresh.achievementManager.checkAchievements();
+            assert.ok(fresh.achievements[`score_${target}`],
+                `score_${target} is in the catalogue but never unlocks at ${target} points`);
+        }
+    });
+
+    test('a milestone does not unlock one point early', () => {
+        game.score = 499;
+        game.achievementManager.checkAchievements();
+        assert.equal(game.achievements.score_500, undefined);
+
+        game.score = 500;
+        game.achievementManager.checkAchievements();
+        assert.ok(game.achievements.score_500);
+    });
+
+    test('every boss attack pattern has an achievement to earn', () => {
+        const ids = new Set(ACHIEVEMENTS.map(a => a.id));
+        for (const pattern of BOSS_ATTACK_PATTERNS) {
+            assert.ok(ids.has(`boss_${pattern}`),
+                `attack pattern ${pattern} can be survived but has no achievement`);
+        }
+    });
+
+    test('no boss achievement refers to a pattern that no longer exists', () => {
+        const patterns = new Set(BOSS_ATTACK_PATTERNS);
+        for (const a of ACHIEVEMENTS.filter(x => x.id.startsWith('boss_'))) {
+            assert.ok(patterns.has(a.id.slice('boss_'.length)),
+                `${a.id} has no matching attack pattern`);
+        }
+    });
+
+    test('catalogue entries are complete and unique', () => {
+        const ids = ACHIEVEMENTS.map(a => a.id);
+        assert.equal(new Set(ids).size, ids.length, 'duplicate achievement id');
+        for (const a of ACHIEVEMENTS) {
+            assert.ok(a.name && a.icon && a.description, `${a.id} is missing display fields`);
+        }
+    });
+
+    test('beating a previous record unlocks, but a first game does not', () => {
+        game.highScore = 0;
+        game.score = 5;
+        game.achievementManager.checkAchievements();
+        assert.equal(game.achievements.beat_high_score, undefined, 'first game should not count');
+
+        game.highScore = 100;
+        game.score = 101;
+        game.achievementManager.checkAchievements();
+        assert.ok(game.achievements.beat_high_score);
+    });
+
+    test('the comeback needs both the lost lives and the score', () => {
+        game.livesLostInFirstLevel = 2;
+        game.score = 999;
+        game.achievementManager.checkAchievements();
+        assert.equal(game.achievements.comeback_1000, undefined);
+
+        game.score = 1000;
+        game.achievementManager.checkAchievements();
+        assert.ok(game.achievements.comeback_1000);
+    });
+
+    test('collecting three power-ups unlocks the collector', () => {
+        game.powerUpsCollectedThisGame = 2;
+        game.achievementManager.checkAchievements();
+        assert.equal(game.achievements.powerups_3, undefined);
+
+        game.powerUpsCollectedThisGame = 3;
+        game.achievementManager.checkAchievements();
+        assert.ok(game.achievements.powerups_3);
+    });
+
+    test('the full house needs every pattern, not merely several', () => {
+        for (const pattern of BOSS_ATTACK_PATTERNS.slice(0, -1)) {
+            game.achievements[`boss_${pattern}`] = { unlocked: true };
+        }
+        game.achievementManager.checkAchievements();
+        assert.equal(game.achievements.all_bosses, undefined, 'six of seven should not be enough');
+
+        game.achievements[`boss_${BOSS_ATTACK_PATTERNS.at(-1)}`] = { unlocked: true };
+        game.achievementManager.checkAchievements();
+        assert.ok(game.achievements.all_bosses);
+    });
+
+    test('unlocking is idempotent and persisted', () => {
+        assert.equal(game.achievementManager.unlockAchievement('powerups_3'), true);
+        assert.equal(game.achievementManager.unlockAchievement('powerups_3'), false,
+            'a second unlock should be a no-op');
+
+        const stored = JSON.parse(localStorage.getItem('spaceDodgerAchievements'));
+        assert.ok(stored.powerups_3.unlocked);
+    });
+
+    test('unlocking announces itself on screen', () => {
+        game.achievementManager.unlockAchievement('shield_saved');
+        assert.match(document.body.textContent, /Achievement Unlocked/);
     });
 });
 

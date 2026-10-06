@@ -81,13 +81,45 @@ export class StorageManager {
         } catch (e) {}
     }
 
+    // A stable id for this browser, minted once and never shown to anyone.
+    // Display names collide; this is what actually says "these runs are mine".
+    static ensurePlayerId() {
+        try {
+            const existing = localStorage.getItem(CONFIG.STORAGE.PLAYER_ID);
+            if (existing && /^[A-Za-z0-9_-]{8,64}$/.test(existing)) {
+                return existing;
+            }
+            const id = StorageManager.newPlayerId();
+            localStorage.setItem(CONFIG.STORAGE.PLAYER_ID, id);
+            return id;
+        } catch (e) {
+            // Storage unavailable: play on without an identity rather than fail
+            return null;
+        }
+    }
+
+    static newPlayerId() {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+            return crypto.randomUUID();
+        }
+        // Older browsers, and any non-secure context where randomUUID is absent
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+            const bytes = crypto.getRandomValues(new Uint8Array(16));
+            return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+        }
+        return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+    }
+
     static resetCache() {
-        const { HIGH_SCORE, METRICS, PLAYER_NAME, ACHIEVEMENTS } = CONFIG.STORAGE;
+        const { HIGH_SCORE, METRICS, PLAYER_NAME, PLAYER_ID, ACHIEVEMENTS } = CONFIG.STORAGE;
 
         try {
             localStorage.removeItem(HIGH_SCORE);
             localStorage.removeItem(METRICS);
+            // The name already goes, so the identity goes with it. Submitted
+            // scores stay on the board, they just stop being claimable here.
             localStorage.removeItem(PLAYER_NAME);
+            localStorage.removeItem(PLAYER_ID);
             localStorage.removeItem(ACHIEVEMENTS);
         } catch (e) {}
     }

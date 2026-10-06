@@ -10,7 +10,8 @@ const {
     MAX_LEADERBOARD_LIMIT,
     sanitizeName,
     validateSubmission,
-    clampLimit
+    clampLimit,
+    isValidPlayerId
 } = require('./lib/validation');
 const {
     SESSION_MAX_AGE_MS,
@@ -35,20 +36,20 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '2kb' }));
 
-const readLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
-const writeLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
+// Overridable so route tests can exercise many requests without tripping the
+// limiter. Production never sets these and gets the values below.
+const READ_LIMIT = Number(process.env.READ_RATE_LIMIT) || 120;
+const WRITE_LIMIT = Number(process.env.WRITE_RATE_LIMIT) || 10;
+
+const readLimiter = rateLimit({ windowMs: 60 * 1000, max: READ_LIMIT, standardHeaders: true, legacyHeaders: false });
+const writeLimiter = rateLimit({ windowMs: 60 * 1000, max: WRITE_LIMIT, standardHeaders: true, legacyHeaders: false });
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/space-dodger';
 
-mongoose.connect(MONGODB_URI)
-    .then(() => console.log('Connected to MongoDB'))
-    .catch(err => {
-        console.error('MongoDB connection error:', err);
-        // Exit so the host restarts the service and retries, instead of serving
-        // requests that buffer for 10s and then fail
-        process.exit(1);
-    });
+function connectToDatabase(uri = MONGODB_URI) {
+    return mongoose.connect(uri);
+}
 
 // Score schema
 const scoreSchema = new mongoose.Schema({
@@ -68,6 +69,13 @@ const scoreSchema = new mongoose.Schema({
         required: true,
         min: 1
     },
+    // Client-generated and stable across renames, so two players who pick the
+    // same display name are still distinguishable. Absent on rows written
+    // before this existed, which is why lookups fall back to the name.
+    playerId: {
+        type: String,
+        required: false
+    },
     timestamp: {
         type: Date,
         default: Date.now
@@ -78,6 +86,8 @@ const scoreSchema = new mongoose.Schema({
 scoreSchema.index({ score: -1, timestamp: 1 });
 // Serves the per-player best lookup, which would otherwise scan the collection
 scoreSchema.index({ playerName: 1, score: -1, timestamp: 1 });
+// The same lookup by identity rather than by display name
+scoreSchema.index({ playerId: 1, score: -1, timestamp: 1 }, { sparse: true });
 
 const Score = mongoose.model('Score', scoreSchema);
 
@@ -205,8 +215,13 @@ app.post('/api/scores', writeLimiter, async (req, res) => {
             });
         }
 
+        // Optional: older clients and anyone with storage disabled submit
+        // without one, and those rows stay name-only
+        const playerId = isValidPlayerId(req.body.playerId) ? req.body.playerId : undefined;
+
         const newScore = new Score({
             playerName: safeName,
+            playerId,
             score: Math.floor(score),
             level: Math.floor(level),
             timestamp: new Date()
@@ -238,7 +253,70 @@ app.post('/api/scores', writeLimiter, async (req, res) => {
     }
 });
 
-// Get player's best score
+// A player's own best run, resolved by identity rather than display name.
+//
+// This is a POST because the body keeps the player id out of URLs and access
+// logs. The id is effectively a bearer token for "these runs are mine", and
+// the leaderboard deliberately never returns anyone's.
+app.post('/api/player/best', readLimiter, async (req, res) => {
+    try {
+        const { playerId, playerName } = req.body || {};
+        const hasId = isValidPlayerId(playerId);
+        const safeName = playerName === undefined ? '' : sanitizeName(playerName);
+
+        if (!hasId && safeName.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'A player id or player name is required'
+            });
+        }
+
+        // Prefer identity. Runs recorded before player ids existed have none,
+        // so fall back to the name to keep a returning player's history.
+        let bestScore = null;
+        if (hasId) {
+            bestScore = await Score.findOne({ playerId })
+                .sort({ score: -1, timestamp: 1 })
+                .select('playerName score level timestamp -_id')
+                .lean();
+        }
+        let matchedBy = bestScore ? 'playerId' : null;
+
+        if (!bestScore && safeName.length > 0) {
+            bestScore = await Score.findOne({ playerName: safeName })
+                .sort({ score: -1, timestamp: 1 })
+                .select('playerName score level timestamp -_id')
+                .lean();
+            if (bestScore) matchedBy = 'playerName';
+        }
+
+        if (!bestScore) {
+            return res.json({
+                success: true,
+                score: null,
+                message: 'No scores found for this player'
+            });
+        }
+
+        const rank = await rankOf(bestScore.score, bestScore.timestamp);
+
+        res.json({
+            success: true,
+            score: bestScore,
+            rank,
+            matchedBy
+        });
+    } catch (error) {
+        console.error('Error fetching player best:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch player best'
+        });
+    }
+});
+
+// Get player's best score by display name. Superseded by /api/player/best,
+// kept because older deployed clients still call it.
 app.get('/api/player/:playerName', readLimiter, async (req, res) => {
     try {
         // Match how the name was normalized on the way in
@@ -281,11 +359,35 @@ app.get('/api/player/:playerName', readLimiter, async (req, res) => {
     }
 });
 
-// Only listen when run directly, so tests can require this file
+// Only connect and listen when run directly. Requiring this file gives you the
+// app with no side effects, so tests can point it at their own database.
 if (require.main === module) {
+    connectToDatabase()
+        .then(() => console.log('Connected to MongoDB'))
+        .catch(err => {
+            console.error('MongoDB connection error:', err);
+            // Exit so the host restarts the service and retries, instead of
+            // serving requests that buffer for 10s and then fail
+            process.exit(1);
+        });
+
     app.listen(PORT, () => {
         console.log(`Space Dodger API server running on port ${PORT}`);
     });
 }
 
-module.exports = { app, Score, UsedToken, rankOf, spendSession, MAX_LEADERBOARD_LIMIT };
+module.exports = {
+    app,
+    Score,
+    UsedToken,
+    connectToDatabase,
+    rankOf,
+    spendSession,
+    createToken,
+    TOKEN_SECRET,
+    MAX_LEADERBOARD_LIMIT,
+    // The app's own mongoose instance. Exported so route tests can point it
+    // at a scratch database and tear it down; the dependency lives here, not
+    // at the repository root, so they cannot require it themselves.
+    mongoose
+};
