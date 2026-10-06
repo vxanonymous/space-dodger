@@ -781,7 +781,7 @@ class SpaceDodger {
 
         if (playerName) {
             this.leaderboardUI.showNameForm(false);
-            this.leaderboardUI.setRankLine(`Playing as ${playerName} — submitting score…`);
+            this.leaderboardUI.setRankLine(`Playing as ${playerName}: submitting score…`);
             this.submitScoreToLeaderboard(playerName);
         } else {
             // First submission: ask for a name inline instead of a blocking prompt.
@@ -794,7 +794,7 @@ class SpaceDodger {
     saveNameAndSubmit(name) {
         StorageManager.savePlayerName(name);
         this.leaderboardUI.showNameForm(false);
-        this.leaderboardUI.setRankLine(`Playing as ${name} — submitting score…`);
+        this.leaderboardUI.setRankLine(`Playing as ${name}: submitting score…`);
         this.submitScoreToLeaderboard(name);
     }
 
@@ -951,8 +951,8 @@ class SpaceDodger {
             if (seq === this.submissionSeq) {
                 this.leaderboardUI.setRankLine(
                     result.success && result.rank
-                        ? `Playing as ${playerName} — Global Rank: #${result.rank}`
-                        : `Playing as ${playerName} — leaderboard unavailable`
+                        ? `Playing as ${playerName} | Global Rank: #${result.rank}`
+                        : `Playing as ${playerName} | leaderboard unavailable`
                 );
             }
         } catch (error) {}

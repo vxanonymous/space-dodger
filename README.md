@@ -36,7 +36,7 @@ http://localhost:8000
 The deployed frontend uses the backend at `https://space-dodger-api.onrender.com`. When the
 frontend is served from `localhost`/`127.0.0.1`, `config.js` automatically targets
 `http://localhost:3000` instead, so playtest scores never reach the production leaderboard.
-If no local backend is running, the game still works — leaderboard features just show as
+If no local backend is running, the game still works, and leaderboard features just show as
 unavailable.
 
 To run the backend locally:
