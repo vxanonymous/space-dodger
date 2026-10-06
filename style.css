@@ -503,6 +503,64 @@ h1 {
     }
 }
 
+/* Power-up status row in the HUD */
+.pu-shield {
+    color: #00ffff;
+}
+
+.pu-slow {
+    color: #ffff00;
+}
+
+/* Transient corner notice */
+.toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #333;
+    color: #fff;
+    padding: 15px 25px;
+    border-radius: 5px;
+    font-weight: bold;
+    z-index: 10000;
+    animation: slideIn 0.3s ease-out;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.toast-out {
+    animation: slideOut 0.3s ease-out;
+}
+
+/* Global leaderboard list */
+.board-list {
+    text-align: left;
+    max-width: 500px;
+    margin: 10px auto;
+    padding-left: 30px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.board-row {
+    margin-bottom: 5px;
+}
+
+.board-row-own {
+    color: #00ff00;
+    font-weight: bold;
+    border-left: 3px solid #00ff00;
+    padding-left: 6px;
+}
+
+.board-date {
+    color: #888;
+    font-size: 0.9em;
+}
+
+.board-note {
+    color: #888;
+}
+
 /* Achievement notification animations */
 @keyframes slideIn {
     from {

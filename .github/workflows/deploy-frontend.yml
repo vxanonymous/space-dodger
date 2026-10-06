@@ -19,6 +19,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+      # Surge publishes straight to the live site, so the tests gate the deploy
+      # rather than just reporting alongside it
+      - name: Run tests
+        run: |
+          npm ci
+          npm test
       # Only the frontend is published; deploying the repo root would expose
       # backend config. The glob picks up new modules on its own, and the
       # backend lives in a subdirectory so it can never be caught by it.
