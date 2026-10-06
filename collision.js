@@ -17,13 +17,16 @@ export function intersects(a, b) {
 // Testing only the obstacle's current position lets fast ones step clean over
 // the player between frames. The gravity attack runs obstacles at five times
 // speed, which is well past the player's 20px height at any normal frame rate,
-// so the swept box is what keeps those hits registering.
+// so the swept box is what keeps those hits registering. Drifters also move
+// sideways, so the box spans prevX too; an obstacle without one only falls.
 export function sweptBounds(obstacle) {
     const top = Math.min(obstacle.prevY, obstacle.y);
+    const prevX = obstacle.prevX ?? obstacle.x;
+    const left = Math.min(prevX, obstacle.x);
     return {
-        x: obstacle.x,
+        x: left,
         y: top,
-        width: obstacle.width,
+        width: Math.max(prevX, obstacle.x) + obstacle.width - left,
         height: obstacle.y + obstacle.height - top
     };
 }
