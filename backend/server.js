@@ -282,8 +282,15 @@ app.post('/api/player/best', readLimiter, async (req, res) => {
         }
         let matchedBy = bestScore ? 'playerId' : null;
 
+        // The name fallback only ever reaches runs nobody has claimed. Without
+        // that restriction it quietly undoes the point of having identities:
+        // anyone who picked an existing player's display name would be handed
+        // that player's record back as their own.
         if (!bestScore && safeName.length > 0) {
-            bestScore = await Score.findOne({ playerName: safeName })
+            bestScore = await Score.findOne({
+                playerName: safeName,
+                playerId: { $in: [null, undefined] }
+            })
                 .sort({ score: -1, timestamp: 1 })
                 .select('playerName score level timestamp -_id')
                 .lean();
