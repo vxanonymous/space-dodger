@@ -242,7 +242,21 @@ describe('drifters', () => {
         assert.notEqual(game.obstacles[0].type, 'drifter');
     });
 
-    test('fall at the same speed as a straight obstacle while moving sideways', () => {
+    test('spawn falling 20% slower than a straight obstacle', () => {
+        game.startGame();
+        game.level = 13;
+        // Same draws for both, so only the type decides the speed
+        withRandom(0.1, () => game.spawnObstacle());
+        withRandom(0.5, () => game.spawnObstacle());
+        const [drifting, straight] = game.obstacles;
+        assert.equal(drifting.type, 'drifter');
+        assert.notEqual(straight.type, 'drifter');
+        const straightAtSameDraw = game.obstacleSpeed + 0.1 * 2;
+        assert.ok(Math.abs(drifting.speed - straightAtSameDraw * 0.8) < 1e-9,
+            `expected ${straightAtSameDraw * 0.8}, got ${drifting.speed}`);
+    });
+
+    test('move sideways while falling at their own speed', () => {
         withoutSpawns(() => {
             game.startGame();
             step(16, 2);
@@ -252,7 +266,7 @@ describe('drifters', () => {
             game.update(1 / 60);
         });
         const [straight, drifting] = game.obstacles;
-        assert.equal(drifting.y, straight.y, 'fall speed differs');
+        assert.equal(drifting.y, straight.y, 'equal speeds should fall equally');
         assert.equal(straight.x, 400, 'a straight obstacle should not drift');
         assert.ok(Math.abs(drifting.x - 403) < 1e-9, `expected x 403, got ${drifting.x}`);
     });
@@ -311,6 +325,157 @@ describe('drifters', () => {
         game.renderer.drawObstacles();
         const lines = ctx.calls.filter(c => c.name === 'lineTo').length;
         assert.equal(lines, 5, 'a hexagon is one moveTo and five lineTo');
+    });
+});
+
+function key(type, k, target = document) {
+    const e = new dom.window.KeyboardEvent(type, { key: k, bubbles: true, cancelable: true });
+    target.dispatchEvent(e);
+    return e;
+}
+
+describe('keyboard steering', () => {
+    for (const [k, sign] of [['d', 1], ['D', 1], ['ArrowRight', 1], ['a', -1], ['A', -1], ['ArrowLeft', -1]]) {
+        test(`holding ${k} steers the ship ${sign > 0 ? 'right' : 'left'}`, () => {
+            withoutSpawns(() => {
+                game.startGame();
+                game.input.pointerX = 400;
+                step(16, 2);
+                const startX = game.player.x;
+                key('keydown', k);
+                step(16, 30);
+                key('keyup', k);
+                assert.ok((game.player.x - startX) * sign > 50,
+                    `moved ${game.player.x - startX}px`);
+            });
+        });
+    }
+
+    test('moves at the configured speed', () => {
+        withoutSpawns(() => {
+            game.startGame();
+            game.input.pointerX = 400;
+            step(16, 2);
+            key('keydown', 'd');
+            step(16, 50); // 0.8s
+            key('keyup', 'd');
+        });
+        // 600px/s for 0.8s, give or take the frame that seeds the clock
+        assert.ok(Math.abs(game.input.pointerX - Math.min(780, 400 + 480)) <= 10,
+            `target at ${game.input.pointerX}`);
+    });
+
+    test('releasing the key stops the ship', () => {
+        withoutSpawns(() => {
+            game.startGame();
+            game.input.pointerX = 400;
+            step(16, 2);
+            key('keydown', 'ArrowRight');
+            step(16, 10);
+            key('keyup', 'ArrowRight');
+            step(16, 60); // let the ship catch up to the target
+            const settled = game.player.x;
+            step(16, 30);
+            assert.ok(Math.abs(game.player.x - settled) < 0.01, 'ship kept moving');
+        });
+    });
+
+    test('holding both directions cancels out', () => {
+        withoutSpawns(() => {
+            game.startGame();
+            game.input.pointerX = 400;
+            key('keydown', 'a');
+            key('keydown', 'd');
+            step(16, 30);
+            key('keyup', 'a');
+            key('keyup', 'd');
+        });
+        assert.equal(game.input.pointerX, 400);
+    });
+
+    test('cannot steer the ship off either edge', () => {
+        withoutSpawns(() => {
+            game.startGame();
+            key('keydown', 'ArrowLeft');
+            step(16, 200);
+            key('keyup', 'ArrowLeft');
+            assert.ok(game.input.pointerX === 0, `target at ${game.input.pointerX}`);
+            assert.ok(game.player.x < 0.01, `ship at ${game.player.x}`);
+            key('keydown', 'ArrowRight');
+            step(16, 300);
+            key('keyup', 'ArrowRight');
+        });
+        assert.equal(game.input.pointerX, 780);
+        assert.ok(Math.abs(game.player.x - 780) < 0.01);
+    });
+
+    test('a pointer parked off the canvas does not delay the key', () => {
+        withoutSpawns(() => {
+            game.startGame();
+            game.input.pointerX = 2000; // mouse left the canvas far to the right
+            step(16, 60);
+            key('keydown', 'a');
+            step(16, 5);
+            key('keyup', 'a');
+        });
+        assert.ok(game.input.pointerX < 780, `target still at ${game.input.pointerX}`);
+    });
+
+    test('a shrunken ship still reaches the edge by keyboard', () => {
+        withoutSpawns(() => {
+            game.startGame();
+            game.collectPowerUp('shrink');
+            key('keydown', 'd');
+            step(16, 300);
+            key('keyup', 'd');
+        });
+        assert.ok(Math.abs(game.player.x - 790) < 0.01, `ship at ${game.player.x}`);
+
+        withoutSpawns(() => {
+            key('keydown', 'a');
+            step(16, 300);
+            key('keyup', 'a');
+        });
+        assert.ok(game.player.x < 0.01, `ship at ${game.player.x}`);
+    });
+
+    test('arrow keys do not scroll the page during a run', () => {
+        game.startGame();
+        assert.equal(key('keydown', 'ArrowLeft').defaultPrevented, true);
+        key('keyup', 'ArrowLeft');
+    });
+
+    // Every earlier test's game still listens on this shared document, so
+    // this checks the current game's own decision rather than the event
+    test('arrow keys still scroll the page from the menu', () => {
+        assert.equal(game.state, 'menu');
+        assert.equal(game.input.isPlaying(), false);
+        game.startGame();
+        assert.equal(game.input.isPlaying(), true);
+    });
+
+    test('typing a name does not steer', () => {
+        game.startGame();
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        key('keydown', 'a', input);
+        assert.equal(game.input.keyDirection(), 0);
+        input.remove();
+    });
+
+    test('losing window focus releases held keys', () => {
+        game.startGame();
+        key('keydown', 'd');
+        assert.equal(game.input.keyDirection(), 1);
+        dom.window.dispatchEvent(new dom.window.Event('blur'));
+        assert.equal(game.input.keyDirection(), 0);
+    });
+
+    test('P still pauses', () => {
+        game.startGame();
+        step(16, 3);
+        key('keydown', 'p');
+        assert.equal(game.paused, true);
     });
 });
 

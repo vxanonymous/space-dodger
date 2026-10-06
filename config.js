@@ -17,7 +17,8 @@ export const CONFIG = {
         HEIGHT: 20,
         COLOR: '#00ff00',
         MOUSE_FOLLOW_SPEED: 0.3, // convergence per 1/60s frame; frame-rate normalized in updatePlayer
-        INVINCIBILITY_DURATION: 1.0 // seconds
+        INVINCIBILITY_DURATION: 1.0, // seconds
+        KEYBOARD_SPEED: 600 // px per second while A/D or an arrow key is held
     },
 
     // Obstacle settings
@@ -30,11 +31,13 @@ export const CONFIG = {
         COLOR: '#ff0000',
         ASTEROID_CHANCE: 0.7,
         SPEED_VARIANCE: 2,
-        // Drifters fall at the normal speed but also move sideways, bouncing
-        // off the edges. They join the mix after the third boss (level 12).
+        // Drifters fall a little slower than other obstacles but also move
+        // sideways, bouncing off the edges. They join the mix after the third
+        // boss (level 12).
         DRIFTER: {
             MIN_LEVEL: 13,
             CHANCE: 0.3, // share of spawns once unlocked
+            FALL_SPEED_FACTOR: 0.8, // 20% slower fall than a straight obstacle
             MIN_DRIFT: 1.5, // horizontal px per 1/60s frame, either direction
             MAX_DRIFT: 4
         }
