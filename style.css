@@ -512,6 +512,10 @@ h1 {
     color: #ffff00;
 }
 
+.pu-shrink {
+    color: #32cd32;
+}
+
 /* Transient corner notice */
 .toast {
     position: fixed;
