@@ -110,6 +110,7 @@ export const CONFIG = {
         HIGH_SCORE: 'spaceDodgerHighScore',
         METRICS: 'spaceDodgerMetrics',
         PLAYER_NAME: 'spaceDodgerPlayerName',
+        PLAYER_ID: 'spaceDodgerPlayerId',
         ACHIEVEMENTS: 'spaceDodgerAchievements'
     },
 

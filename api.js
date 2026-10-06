@@ -31,7 +31,7 @@ class LeaderboardAPI {
         }
     }
 
-    async submitScore(playerName, score, level, sessionToken) {
+    async submitScore(playerName, score, level, sessionToken, playerId) {
         try {
             const response = await fetch(`${this.baseURL}/api/scores`, {
                 method: 'POST',
@@ -42,7 +42,8 @@ class LeaderboardAPI {
                     playerName: playerName.trim(),
                     score: Math.floor(score),
                     level: Math.floor(level),
-                    sessionToken: sessionToken || undefined
+                    sessionToken: sessionToken || undefined,
+                    playerId: playerId || undefined
                 }),
                 signal: this.requestTimeout()
             });
@@ -79,13 +80,23 @@ class LeaderboardAPI {
     }
 
     // A player's own best run and where it sits globally, including ranks past
-    // the visible top 100
-    async getPlayerBest(playerName) {
+    // the visible top 100.
+    //
+    // Resolved by player id rather than display name, so two players who chose
+    // the same name do not share a record. POST keeps the id out of URLs and
+    // access logs; the name is sent only as a fallback for runs recorded
+    // before ids existed.
+    async getPlayerBest(playerId, playerName) {
         try {
-            const response = await fetch(
-                `${this.baseURL}/api/player/${encodeURIComponent(playerName)}`,
-                { signal: this.requestTimeout() }
-            );
+            const response = await fetch(`${this.baseURL}/api/player/best`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    playerId: playerId || undefined,
+                    playerName: playerName || undefined
+                }),
+                signal: this.requestTimeout()
+            });
 
             if (!response.ok) {
                 throw new Error('Failed to fetch player best');

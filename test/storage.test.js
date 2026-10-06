@@ -109,6 +109,50 @@ describe('loadMetrics', () => {
     });
 });
 
+describe('ensurePlayerId', () => {
+    test('mints an id on first use and keeps it afterwards', () => {
+        const first = StorageManager.ensurePlayerId();
+        assert.match(first, /^[A-Za-z0-9_-]{8,64}$/);
+        assert.equal(StorageManager.ensurePlayerId(), first, 'identity must be stable');
+    });
+
+    test('a stored id survives unrelated writes', () => {
+        const id = StorageManager.ensurePlayerId();
+        StorageManager.savePlayerName('Vinh');
+        StorageManager.saveHighScore(999);
+        assert.equal(StorageManager.ensurePlayerId(), id);
+    });
+
+    test('replaces a corrupt stored id rather than sending junk to the server', () => {
+        for (const junk of ['', 'short', '!!!not valid!!!', 'x'.repeat(200)]) {
+            install(fakeStorage({ spaceDodgerPlayerId: junk }));
+            const id = StorageManager.ensurePlayerId();
+            assert.match(id, /^[A-Za-z0-9_-]{8,64}$/, `did not replace ${JSON.stringify(junk)}`);
+            assert.notEqual(id, junk);
+        }
+    });
+
+    test('two browsers get different ids', () => {
+        const a = StorageManager.ensurePlayerId();
+        install(fakeStorage());
+        const b = StorageManager.ensurePlayerId();
+        assert.notEqual(a, b);
+    });
+
+    test('returns null instead of throwing when storage is unavailable', () => {
+        install(fakeStorage({}, { throwOnGet: true }));
+        assert.equal(StorageManager.ensurePlayerId(), null);
+    });
+
+    test('resetCache clears the identity along with the name', () => {
+        const id = StorageManager.ensurePlayerId();
+        StorageManager.savePlayerName('Vinh');
+        StorageManager.resetCache();
+        assert.equal(StorageManager.loadPlayerName(), null);
+        assert.notEqual(StorageManager.ensurePlayerId(), id, 'a fresh identity should be minted');
+    });
+});
+
 describe('writes', () => {
     test('saving never throws when storage is full', () => {
         install(fakeStorage({}, { throwOnSet: true }));

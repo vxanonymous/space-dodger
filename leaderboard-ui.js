@@ -49,13 +49,18 @@ export class LeaderboardUI {
         this.board.replaceChildren(title, note);
     }
 
-    renderBoard(entries, ownName) {
+    // ownBest is this player's own best run, resolved server-side by player
+    // id. Matching on score and timestamp pins the exact row, where matching
+    // on the display name would light up every player who picked that name.
+    renderBoard(entries, ownBest) {
         if (!this.board) return;
 
         if (!entries || entries.length === 0) {
             this.showBoardMessage('Global Leaderboard', 'No scores yet. Be the first!');
             return;
         }
+
+        const ownAt = ownBest ? new Date(ownBest.timestamp).getTime() : null;
 
         const title = document.createElement('h3');
         title.textContent = 'Global Leaderboard (Top 100)';
@@ -65,7 +70,9 @@ export class LeaderboardUI {
 
         entries.forEach((entry, index) => {
             const item = document.createElement('div');
-            const isOwn = Boolean(ownName) && entry.playerName === ownName;
+            const isOwn = ownAt !== null &&
+                entry.score === ownBest.score &&
+                new Date(entry.timestamp).getTime() === ownAt;
             item.className = isOwn ? 'board-row board-row-own' : 'board-row';
 
             const name = document.createElement('strong');
