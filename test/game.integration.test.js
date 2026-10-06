@@ -384,6 +384,75 @@ describe('offline behaviour', () => {
     });
 });
 
+describe('cold start', () => {
+    // Measured against the real host: 22.6s for the first request after it
+    // sleeps, 0.1s once awake. The old flat 8s budget meant the first visitor
+    // after any lull always saw "unavailable".
+    let api, CONFIG;
+
+    before(async () => {
+        ({ leaderboardAPI: api } = await import('../api.js'));
+        ({ CONFIG } = await import('../config.js'));
+    });
+
+    test('the cold budget comfortably exceeds a real restart', () => {
+        assert.ok(CONFIG.API.COLD_TIMEOUT_MS > 22646,
+            'the cold timeout must clear the 22.6s restart that was measured');
+    });
+
+    test('the warm budget stays short, so a real outage is reported quickly', () => {
+        assert.ok(CONFIG.API.TIMEOUT_MS <= 10000);
+        assert.ok(CONFIG.API.TIMEOUT_MS < CONFIG.API.COLD_TIMEOUT_MS);
+    });
+
+    test('an unwarmed client budgets for the restart', () => {
+        api.warmed = false;
+        assert.equal(api.requestTimeout().constructor.name, 'AbortSignal');
+    });
+
+    test('any reply marks the host awake, including an error status', async () => {
+        api.warmed = false;
+        const original = globalThis.fetch;
+        globalThis.fetch = () => Promise.resolve({
+            ok: false, status: 500, json: () => Promise.resolve({})
+        });
+        try {
+            await api.getLeaderboard();
+            assert.equal(api.warmed, true, 'a 500 still proves the host answered');
+        } finally {
+            globalThis.fetch = original;
+        }
+    });
+
+    test('a failed request leaves the client cold, so the next one still waits', async () => {
+        api.warmed = false;
+        await api.getLeaderboard(); // the suite's fetch rejects
+        assert.equal(api.warmed, false);
+    });
+
+    test('warmUp does not reject when the host is unreachable', async () => {
+        api.warmed = false;
+        assert.doesNotThrow(() => api.warmUp());
+        await new Promise(r => setTimeout(r, 10));
+    });
+
+    test('the menu says the server is waking rather than sitting blank', async () => {
+        api.warmed = false;
+        // Checked before awaiting: the notice has to be on screen for the
+        // whole restart, not swapped in after it finishes.
+        const inFlight = game.refreshLeaderboardViews();
+        assert.match(game.leaderboardUI.board.textContent, /Waking the server up/);
+        await inFlight;
+    });
+
+    test('a warm client skips the waking notice', async () => {
+        api.warmed = true;
+        const inFlight = game.refreshLeaderboardViews();
+        assert.doesNotMatch(game.leaderboardUI.board.textContent, /Waking the server up/);
+        await inFlight;
+    });
+});
+
 describe('leaderboard rendering', () => {
     test('renders rows and marks the player', () => {
         game.leaderboardUI.renderBoard([

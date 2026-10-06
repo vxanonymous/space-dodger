@@ -103,6 +103,9 @@ class SpaceDodger {
 
         this.createStars();
         this.hud.setHighScore(this.highScore);
+        // Begin the API's restart before anything needs it, so the wait
+        // overlaps with the player reading the menu
+        leaderboardAPI.warmUp();
         this.updateMenuMetrics();
     }
 
@@ -800,6 +803,15 @@ class SpaceDodger {
     // be highlighted by identity instead of by a display name anyone can take.
     async refreshLeaderboardViews() {
         const playerName = StorageManager.loadPlayerName();
+
+        // The host sleeps when idle and takes tens of seconds to come back, so
+        // say so rather than leaving the panel blank for the whole restart
+        if (!leaderboardAPI.warmed) {
+            this.leaderboardUI.showBoardMessage(
+                'Global Leaderboard',
+                'Waking the server up, this can take up to a minute…'
+            );
+        }
 
         const [board, best] = await Promise.all([
             leaderboardAPI.getLeaderboard().catch(() => ({ success: false })),

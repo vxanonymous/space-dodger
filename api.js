@@ -4,23 +4,46 @@ import { CONFIG } from './config.js';
 class LeaderboardAPI {
     constructor() {
         this.baseURL = CONFIG.API.BASE_URL;
+        // Until something answers, assume the service may be asleep
+        this.warmed = false;
     }
 
-    // Never let a hung request (e.g. a cold-starting server) block a caller forever
+    // Never let a hung request block a caller forever. The budget is generous
+    // only until the first reply: a sleeping host takes tens of seconds to
+    // restart, but once awake it answers in milliseconds, and a long timeout
+    // from then on would just mean a long wait before reporting a real outage.
     requestTimeout() {
-        return typeof AbortSignal !== 'undefined' && AbortSignal.timeout
-            ? AbortSignal.timeout(CONFIG.API.TIMEOUT_MS)
-            : undefined;
+        if (typeof AbortSignal === 'undefined' || !AbortSignal.timeout) return undefined;
+        return AbortSignal.timeout(this.warmed ? CONFIG.API.TIMEOUT_MS : CONFIG.API.COLD_TIMEOUT_MS);
+    }
+
+    // Start the restart clock as early as possible, so the wait overlaps with
+    // the player reading the menu instead of landing on their first request.
+    // Fire and forget: nothing depends on the result.
+    warmUp() {
+        if (this.warmed) return;
+        fetch(`${this.baseURL}/health`, { signal: this.requestTimeout() })
+            .then(() => { this.warmed = true; })
+            .catch(() => {});
+    }
+
+    // Single place that applies the timeout and notices the host is awake.
+    // Any reply counts, including an error status: the point is that
+    // something answered, so later requests need not budget for a restart.
+    async request(path, options = {}) {
+        const response = await fetch(`${this.baseURL}${path}`, {
+            ...options,
+            signal: this.requestTimeout()
+        });
+        this.warmed = true;
+        return response;
     }
 
     // Proof-of-play: fetched at game start so the server can bound the final
     // score by the session's real age
     async startSession() {
         try {
-            const response = await fetch(`${this.baseURL}/api/session`, {
-                method: 'POST',
-                signal: this.requestTimeout()
-            });
+            const response = await this.request('/api/session', { method: 'POST' });
             if (!response.ok) {
                 throw new Error('Failed to start session');
             }
@@ -33,7 +56,7 @@ class LeaderboardAPI {
 
     async submitScore(playerName, score, level, sessionToken, playerId) {
         try {
-            const response = await fetch(`${this.baseURL}/api/scores`, {
+            const response = await this.request('/api/scores', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -44,8 +67,7 @@ class LeaderboardAPI {
                     level: Math.floor(level),
                     sessionToken: sessionToken || undefined,
                     playerId: playerId || undefined
-                }),
-                signal: this.requestTimeout()
+                })
             });
 
             const data = await response.json();
@@ -63,9 +85,7 @@ class LeaderboardAPI {
 
     async getLeaderboard(limit = CONFIG.API.LEADERBOARD_LIMIT) {
         try {
-            const response = await fetch(`${this.baseURL}/api/leaderboard?limit=${limit}`, {
-                signal: this.requestTimeout()
-            });
+            const response = await this.request(`/api/leaderboard?limit=${limit}`);
 
             if (!response.ok) {
                 throw new Error('Failed to fetch leaderboard');
@@ -88,14 +108,13 @@ class LeaderboardAPI {
     // before ids existed.
     async getPlayerBest(playerId, playerName) {
         try {
-            const response = await fetch(`${this.baseURL}/api/player/best`, {
+            const response = await this.request('/api/player/best', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     playerId: playerId || undefined,
                     playerName: playerName || undefined
-                }),
-                signal: this.requestTimeout()
+                })
             });
 
             if (!response.ok) {
