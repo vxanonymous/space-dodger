@@ -70,6 +70,8 @@ class SpaceDodger {
         });
         this.input = new InputManager(this.canvas, {
             onPauseToggle: () => this.togglePause(),
+            // Arrow keys would otherwise scroll the page mid-run
+            isPlaying: () => this.state === 'playing',
             initialX: START_X
         });
         this.metricsTracker = new MetricsTracker();
@@ -286,7 +288,20 @@ class SpaceDodger {
 
     updatePlayer(deltaTime) {
         const { CANVAS_WIDTH } = CONFIG;
-        const { MOUSE_FOLLOW_SPEED, WIDTH } = CONFIG.PLAYER;
+        const { MOUSE_FOLLOW_SPEED, WIDTH, KEYBOARD_SPEED } = CONFIG.PLAYER;
+
+        // Held steering keys slide the target along at a fixed speed. The
+        // target is clamped first so a pointer parked off the canvas edge
+        // doesn't swallow the first moments of a key press. The range widens
+        // by the shrink offset below, so a shrunken ship still reaches both edges.
+        const direction = this.input.keyDirection();
+        if (direction !== 0) {
+            const offset = (WIDTH - this.player.width) / 2;
+            const minX = -offset;
+            const maxX = CANVAS_WIDTH - WIDTH + offset;
+            const from = Math.max(minX, Math.min(maxX, this.input.pointerX));
+            this.input.pointerX = Math.max(minX, Math.min(maxX, from + direction * KEYBOARD_SPEED * deltaTime));
+        }
 
         // The pointer marks where a full-size ship's left edge goes; a shrunken
         // ship aims for the same centre, so shrinking never shifts the steering
@@ -421,11 +436,12 @@ class SpaceDodger {
             type: Math.random() < ASTEROID_CHANCE ? 'asteroid' : 'obstacle'
         };
 
-        // Same fall speed as any other obstacle, plus a sideways drift of
-        // random size and direction, so a drifter covers more ground overall
+        // A slower fall than other obstacles, plus a sideways drift of random
+        // size and direction
         if (this.level >= DRIFTER.MIN_LEVEL && Math.random() < DRIFTER.CHANCE) {
             const drift = DRIFTER.MIN_DRIFT + Math.random() * (DRIFTER.MAX_DRIFT - DRIFTER.MIN_DRIFT);
             obstacle.type = 'drifter';
+            obstacle.speed *= DRIFTER.FALL_SPEED_FACTOR;
             obstacle.vx = Math.random() < 0.5 ? -drift : drift;
         }
 
